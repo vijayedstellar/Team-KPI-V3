@@ -320,6 +320,7 @@ export const generateActionItems = (
   const kpiNames = [...new Set(targets.map(t => t.kpi_name))];
   
   console.log('Available KPI names from targets:', kpiNames);
+  console.log('Available columns in performance record:', Object.keys(currentRecord));
 
   kpiNames.forEach((kpiName, index) => {
     const target = targets.find(t => t.kpi_name === kpiName);
@@ -329,7 +330,13 @@ export const generateActionItems = (
     
     // Skip if the KPI doesn't exist in the performance record
     if (currentValue === undefined || currentValue === null) {
-      console.log(`Skipping KPI ${kpiName} - not found in performance record`);
+      console.log(`Skipping KPI ${kpiName} - column doesn't exist in performance_records table`);
+      return;
+    }
+    
+    // Skip if the KPI column exists but has no meaningful data (0 and no target)
+    if (currentValue === 0 && target.monthly_target === 0) {
+      console.log(`Skipping KPI ${kpiName} - no data and no target set`);
       return;
     }
     
@@ -349,7 +356,8 @@ export const generateActionItems = (
         `Review ${formatKPIName(kpiName)} strategy and processes`,
         `Set specific goals for improving ${formatKPIName(kpiName)}`,
         `Monitor ${formatKPIName(kpiName)} trends more closely`,
-        `Seek guidance on best practices for ${formatKPIName(kpiName)}`
+        `Ensure ${formatKPIName(kpiName)} data is being tracked properly`,
+        `Verify ${formatKPIName(kpiName)} targets are realistic and achievable`
       ]
     };
 

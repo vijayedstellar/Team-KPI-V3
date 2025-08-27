@@ -220,11 +220,38 @@ const PerformanceTracking: React.FC = () => {
   const getActionItems = () => {
     if (!selectedRecordForActions) return [];
     
-    const previousRecords = performanceRecords.filter(
-      r => r.team_member_id === selectedRecordForActions.team_member_id && r.id !== selectedRecordForActions.id
+    // Get all records for this team member (excluding current record)
+    const previousRecords = performanceRecords.filter(record => 
+      record.team_member_id === selectedRecordForActions.team_member_id && 
+      record.id !== selectedRecordForActions.id
     );
     
-    return generateActionItems(selectedRecordForActions, previousRecords, targets);
+    // Get targets for this team member's designation
+    const teamMember = analysts.find(a => a.id === selectedRecordForActions.team_member_id);
+    const relevantTargets = teamMember ? targets.filter(target => 
+      target.designation === teamMember.designation || target.role === teamMember.designation
+    ) : [];
+    
+    console.log('Action Items Debug:', {
+      selectedRecord: selectedRecordForActions,
+      teamMember: teamMember?.name,
+      designation: teamMember?.designation,
+      previousRecords: previousRecords.length,
+      relevantTargets: relevantTargets.length,
+      allTargets: targets.length
+    });
+    
+    console.log('Detailed Action Items Debug:', {
+      recordColumns: Object.keys(selectedRecordForActions),
+      targetKPIs: relevantTargets.map(t => ({ name: t.kpi_name, target: t.monthly_target })),
+      recordValues: relevantTargets.map(t => ({ 
+        kpi: t.kpi_name, 
+        value: (selectedRecordForActions as any)[t.kpi_name],
+        exists: t.kpi_name in selectedRecordForActions
+      }))
+    });
+    
+    return generateActionItems(selectedRecordForActions, previousRecords, relevantTargets);
   };
 
   const toggleRowExpansion = (recordId: string) => {
@@ -525,7 +552,10 @@ const PerformanceTracking: React.FC = () => {
             <div className="p-6">
               <ActionItemsPanel
                 actionItems={getActionItems()}
-                analystName={selectedRecordForActions.team_members?.name}
+                analystName={(() => {
+                  const teamMember = analysts.find(a => a.id === selectedRecordForActions.team_member_id);
+                  return teamMember?.name || 'Unknown Team Member';
+                })()}
                 month={months[parseInt(selectedRecordForActions.month) - 1]?.label}
                 year={selectedRecordForActions.year}
               />
