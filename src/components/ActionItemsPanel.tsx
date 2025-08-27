@@ -152,7 +152,20 @@ const ActionItemsPanel: React.FC<ActionItemsPanelProps> = ({
         {actionItems.length === 0 && (
           <div className="text-center py-8">
             <Info className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <p className="text-gray-500">No performance data available for analysis</p>
+            <div className="space-y-2">
+              <p className="text-gray-500 font-medium">No action items generated</p>
+              <div className="text-sm text-gray-400 space-y-1">
+                <p>This could be because:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>No KPI targets are set for this team member's designation</li>
+                  <li>No previous performance records exist for comparison</li>
+                  <li>All KPIs are performing within expected ranges</li>
+                </ul>
+                <p className="mt-3 text-blue-600">
+                  💡 Set up KPI targets in Settings → KPI Mappings to enable action item analysis
+                </p>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -209,8 +222,68 @@ const ActionItemCard: React.FC<{ item: ActionItem }> = ({ item }) => {
           <div className="flex items-center gap-2 mb-2">
             <h5 className="font-semibold text-gray-900">{formatKPIName(item.kpi)}</h5>
             {getTrendIcon(item.description)}
+            {/* Extract and display trend information more prominently */}
+            {(() => {
+              const trendMatch = item.description.match(/Trend: (\w+) \(([+-]?\d+)%\)/);
+              const currentMatch = item.description.match(/Current: (\d+)/);
+              const previousMatch = item.description.match(/Previous: (\d+)/);
+              
+              if (trendMatch && currentMatch) {
+                const [, trendDirection, changePercent] = trendMatch;
+                const current = currentMatch[1];
+                const previous = previousMatch ? previousMatch[1] : null;
+                
+                return (
+                  <div className="ml-auto flex items-center gap-2 text-xs">
+                    {previous && (
+                      <span className="text-gray-500">
+                        {previous} → {current}
+                      </span>
+                    )}
+                    <span className={`px-2 py-1 rounded-full font-medium ${
+                      trendDirection === 'improving' ? 'bg-green-100 text-green-700' :
+                      trendDirection === 'declining' ? 'bg-red-100 text-red-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {changePercent}%
+                    </span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </div>
-          <p className="text-sm text-gray-700 mb-3">{item.description}</p>
+          
+          {/* Enhanced description with better formatting */}
+          <div className="text-sm text-gray-700 mb-3">
+            {(() => {
+              const parts = item.description.split(' | ');
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  {parts.map((part, index) => {
+                    const [label, value] = part.split(': ');
+                    if (!value) return null;
+                    
+                    return (
+                      <div key={index} className="flex justify-between">
+                        <span className="font-medium text-gray-600">{label}:</span>
+                        <span className={`font-semibold ${
+                          label === 'Achievement' ? (
+                            parseInt(value) >= 100 ? 'text-green-600' :
+                            parseInt(value) >= 84 ? 'text-blue-600' :
+                            parseInt(value) >= 67 ? 'text-amber-600' :
+                            'text-red-600'
+                          ) : 'text-gray-900'
+                        }`}>
+                          {value}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
           
           <div className="mb-3">
             <h6 className="font-medium text-gray-800 mb-2">Recommended Actions:</h6>

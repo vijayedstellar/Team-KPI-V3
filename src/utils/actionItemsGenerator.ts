@@ -390,13 +390,18 @@ export const generateActionItems = (
       }
 
       const description = `Current: ${currentValue} | Target: ${target.monthly_target} | Achievement: ${achievementPercentage}% | Trend: ${trend.trend} (${trend.changePercentage > 0 ? '+' : ''}${trend.changePercentage}%)`;
+      
+      // Enhanced description with actual counts for better context
+      const enhancedDescription = trend.previous > 0 
+        ? `Current: ${currentValue} (Previous: ${trend.previous}) | Target: ${target.monthly_target} | Achievement: ${achievementPercentage}% | Trend: ${trend.trend} (${trend.changePercentage > 0 ? '+' : ''}${trend.changePercentage}%)`
+        : `Current: ${currentValue} | Target: ${target.monthly_target} | Achievement: ${achievementPercentage}% | Trend: ${trend.trend} (${trend.changePercentage > 0 ? '+' : ''}${trend.changePercentage}%)`;
 
       actionItems.push({
         id: `${kpiName}-${currentRecord.id}`,
         kpi: kpiName,
         severity,
         title: categoryRecommendations.title,
-        description,
+        description: enhancedDescription,
         recommendations: categoryRecommendations.recommendations,
         priority
       });
