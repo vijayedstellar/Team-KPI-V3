@@ -223,6 +223,112 @@ const Dashboard: React.FC = () => {
     return analystSummary;
   };
 
+  // Get KPIs for a specific team member (same logic as Performance Tracking)
+  const getKPIsForTeamMember = (teamMemberId: string) => {
+    const teamMember = teamMembers.find(tm => tm.id === teamMemberId);
+    if (!teamMember) return [];
+    
+    // For now, use designation-based targets since user-specific mappings aren't loaded in dashboard
+    // In a full implementation, you'd load user KPI mappings here too
+    const designationTargets = targets.filter(target => 
+      (target.designation === teamMember.designation || target.role === teamMember.designation) &&
+      target.monthly_target > 0
+    );
+    
+    return designationTargets;
+  };
+
+  // Calculate leaderboard data
+  const getLeaderboardData = () => {
+    const leaderboardData: Array<{
+      teamMember: TeamMember;
+      totalRecords: number;
+      averagePerformance: number;
+      kpiPerformances: Array<{
+        kpi: string;
+        actual: number;
+        target: number;
+        achievement: number;
+      }>;
+      totalAchievement: number;
+      criticalKPIs: number;
+      goodKPIs: number;
+      lastMonthRecord: PerformanceRecord | null;
+    }> = [];
+
+    teamMembers.forEach(teamMember => {
+      const memberRecords = performanceData.filter(record => record.team_member_id === teamMember.id);
+      if (memberRecords.length === 0) return;
+
+      const memberKPIs = getKPIsForTeamMember(teamMember.id);
+      if (memberKPIs.length === 0) return;
+
+      let totalAchievement = 0;
+      let validKPICount = 0;
+      let criticalCount = 0;
+      let goodCount = 0;
+      const kpiPerformances: Array<{
+        kpi: string;
+        actual: number;
+        target: number;
+        achievement: number;
+      }> = [];
+
+      // Calculate performance for each KPI
+      memberKPIs.forEach(target => {
+        const totalActual = memberRecords.reduce((sum, record) => {
+          return sum + ((record as any)[target.kpi_name] || 0);
+        }, 0);
+        
+        const totalTarget = target.monthly_target * memberRecords.length;
+        const achievement = totalTarget > 0 ? Math.round((totalActual / totalTarget) * 100) : 0;
+        
+        kpiPerformances.push({
+          kpi: target.kpi_name,
+          actual: totalActual,
+          target: totalTarget,
+          achievement
+        });
+        
+        totalAchievement += achievement;
+        validKPICount++;
+        
+        // Count performance categories
+        if (achievement <= 66) criticalCount++;
+        else if (achievement >= 120) goodCount++;
+      });
+
+      const averagePerformance = validKPICount > 0 ? Math.round(totalAchievement / validKPICount) : 0;
+      
+      // Get most recent record
+      const sortedRecords = memberRecords.sort((a, b) => {
+        const aDate = new Date(a.year, parseInt(a.month) - 1);
+        const bDate = new Date(b.year, parseInt(b.month) - 1);
+        return bDate.getTime() - aDate.getTime();
+      });
+
+      leaderboardData.push({
+        teamMember,
+        totalRecords: memberRecords.length,
+        averagePerformance,
+        kpiPerformances,
+        totalAchievement,
+        criticalKPIs: criticalCount,
+        goodKPIs: goodCount,
+        lastMonthRecord: sortedRecords[0] || null
+      });
+    });
+
+    // Sort by average performance (highest first)
+    return leaderboardData.sort((a, b) => b.averagePerformance - a.averagePerformance);
+  };
+
+  const formatKPIName = (kpiName: string) => {
+    return kpiName.split('_').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ');
+  };
+
   const categoryStats = getPerformanceCategoryStats(performanceData, targets);
 
   if (loading) {
@@ -338,68 +444,239 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Team Performance Analysis */}
-      {Object.keys(getAnalystPerformanceSummary()).length > 0 ? (
+      {(() => {
+        const leaderboardData = getLeaderboardData();
+        return leaderboardData.length > 0 ? (
         <div className="bg-white rounded-lg shadow-sm border p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Team Performance Analysis</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div>
-              <h4 className="font-medium text-gray-700 mb-3">Individual Team Member Summary</h4>
-              <div className="space-y-3 max-h-80 overflow-y-auto">
-                {Object.entries(getAnalystPerformanceSummary()).map(([analystName, summary]) => (
-                  <div key={analystName} className="bg-gray-50 p-4 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <h5 className="font-semibold text-gray-900">{analystName}</h5>
-                      <PerformanceIndicator 
-                        achievementPercentage={summary.averagePerformance}
-                        showLabel={true}
-                        size="sm"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-gray-600">Records:</span>
-                        <span className="ml-2 font-medium">{summary.totalRecords}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Outreaches:</span>
-                        <span className="ml-2 font-medium">{summary.totalOutreaches.toLocaleString()}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Live Links:</span>
-                        <span className="ml-2 font-medium">{summary.totalLiveLinks}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">High DA:</span>
-                        <span className="ml-2 font-medium">{summary.totalHighDALinks}</span>
-                      </div>
-                    </div>
-                    {summary.criticalKPIs > 0 && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 text-red-500" />
-                        <span className="text-sm text-red-600">{summary.criticalKPIs} critical KPIs need attention</span>
-                      </div>
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold text-gray-800">Team Performance Leaderboard</h3>
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-green-600" />
+              <span className="text-sm text-gray-600">
+                Period: {formatPeriodLabel(
+                  selectedPeriod.startMonth,
+                  selectedPeriod.startYear,
+                  selectedPeriod.endMonth,
+                  selectedPeriod.endYear
+                )}
+              </span>
+            </div>
+          </div>
+
+          {/* Top Performer Highlight */}
+          {leaderboardData.length > 0 && (
+            <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border-2 border-yellow-200 rounded-lg p-6 mb-6">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-12 h-12 bg-yellow-500 rounded-full flex items-center justify-center">
+                  <Award className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h4 className="text-lg font-bold text-yellow-800">🏆 Top Performer of the Period</h4>
+                  <p className="text-sm text-yellow-700">Highest average performance across all assigned KPIs</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <p className="text-sm text-yellow-700">Team Member</p>
+                  <p className="text-xl font-bold text-yellow-900">{leaderboardData[0].teamMember.name}</p>
+                  <p className="text-sm text-yellow-600">{leaderboardData[0].teamMember.designation}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-yellow-700">Average Performance</p>
+                  <p className="text-3xl font-bold text-yellow-900">{leaderboardData[0].averagePerformance}%</p>
+                  <PerformanceIndicator 
+                    achievementPercentage={leaderboardData[0].averagePerformance}
+                    showLabel={false}
+                    size="sm"
+                  />
+                </div>
+                <div>
+                  <p className="text-sm text-yellow-700">Performance Summary</p>
+                  <div className="flex items-center gap-4 text-sm">
+                    <span className="text-green-600 font-medium">{leaderboardData[0].goodKPIs} Good KPIs</span>
+                    {leaderboardData[0].criticalKPIs > 0 && (
+                      <span className="text-red-600 font-medium">{leaderboardData[0].criticalKPIs} Critical KPIs</span>
                     )}
                   </div>
-                ))}
+                  <p className="text-xs text-yellow-600 mt-1">{leaderboardData[0].totalRecords} months tracked</p>
+                </div>
               </div>
             </div>
-            
+          )}
+
+          {/* Leaderboard Table */}
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Team Member</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Designation</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Performance</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">KPI Breakdown</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Records</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {leaderboardData.map((entry, index) => {
+                  const isTopPerformer = index === 0;
+                  const rowClass = isTopPerformer 
+                    ? 'bg-gradient-to-r from-yellow-50 to-amber-50 border-l-4 border-yellow-400' 
+                    : 'hover:bg-gray-50';
+                  
+                  return (
+                    <tr key={entry.teamMember.id} className={rowClass}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        <div className="flex items-center gap-2">
+                          {isTopPerformer && <Award className="w-5 h-5 text-yellow-500" />}
+                          <span className={`text-lg font-bold ${isTopPerformer ? 'text-yellow-700' : 'text-gray-700'}`}>
+                            #{index + 1}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold ${
+                            isTopPerformer ? 'bg-yellow-500' : 'bg-blue-500'
+                          }`}>
+                            {entry.teamMember.name.charAt(0)}
+                          </div>
+                          <div className="ml-4">
+                            <div className={`text-sm font-medium ${isTopPerformer ? 'text-yellow-900' : 'text-gray-900'}`}>
+                              {entry.teamMember.name}
+                            </div>
+                            <div className="text-sm text-gray-500">{entry.teamMember.email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {entry.teamMember.designation}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-2xl font-bold ${
+                            isTopPerformer ? 'text-yellow-700' : 'text-gray-900'
+                          }`}>
+                            {entry.averagePerformance}%
+                          </span>
+                          <PerformanceIndicator 
+                            achievementPercentage={entry.averagePerformance}
+                            showLabel={false}
+                            size="sm"
+                          />
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        <div className="space-y-1 max-w-xs">
+                          {entry.kpiPerformances.slice(0, 3).map((kpi) => (
+                            <div key={kpi.kpi} className="flex items-center justify-between bg-gray-50 p-2 rounded text-xs">
+                              <span className="font-medium text-gray-700 truncate">
+                                {formatKPIName(kpi.kpi)}:
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <span className="text-gray-600">{kpi.actual}/{kpi.target}</span>
+                                <span className={`font-semibold ${
+                                  kpi.achievement >= 100 ? 'text-green-600' :
+                                  kpi.achievement >= 84 ? 'text-blue-600' :
+                                  kpi.achievement >= 67 ? 'text-amber-600' :
+                                  'text-red-600'
+                                }`}>
+                                  {kpi.achievement}%
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                          {entry.kpiPerformances.length > 3 && (
+                            <div className="text-xs text-gray-500 text-center">
+                              +{entry.kpiPerformances.length - 3} more KPIs
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex flex-col gap-1">
+                          {entry.goodKPIs > 0 && (
+                            <div className="flex items-center gap-1">
+                              <CheckCircle className="w-4 h-4 text-green-500" />
+                              <span className="text-xs text-green-600 font-medium">{entry.goodKPIs} Good</span>
+                            </div>
+                          )}
+                          {entry.criticalKPIs > 0 && (
+                            <div className="flex items-center gap-1">
+                              <AlertTriangle className="w-4 h-4 text-red-500" />
+                              <span className="text-xs text-red-600 font-medium">{entry.criticalKPIs} Critical</span>
+                            </div>
+                          )}
+                          {entry.goodKPIs === 0 && entry.criticalKPIs === 0 && (
+                            <div className="flex items-center gap-1">
+                              <Target className="w-4 h-4 text-blue-500" />
+                              <span className="text-xs text-blue-600 font-medium">On Track</span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <div className="text-center">
+                          <div className="font-semibold text-gray-900">{entry.totalRecords}</div>
+                          <div className="text-xs text-gray-500">months</div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Performance Distribution Chart */}
+          <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div>
               <h4 className="font-medium text-gray-700 mb-3">Performance Distribution</h4>
               <PerformanceCategoryChart stats={categoryStats} />
             </div>
+            <div>
+              <h4 className="font-medium text-gray-700 mb-3">Team Performance Summary</h4>
+              <div className="space-y-3">
+                <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-green-700">Top Performers (120%+)</span>
+                    <span className="text-lg font-bold text-green-800">
+                      {leaderboardData.filter(entry => entry.averagePerformance >= 120).length}
+                    </span>
+                  </div>
+                </div>
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-blue-700">On Target (84-119%)</span>
+                    <span className="text-lg font-bold text-blue-800">
+                      {leaderboardData.filter(entry => entry.averagePerformance >= 84 && entry.averagePerformance < 120).length}
+                    </span>
+                  </div>
+                </div>
+                <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-red-700">Needs Attention (&lt;84%)</span>
+                    <span className="text-lg font-bold text-red-800">
+                      {leaderboardData.filter(entry => entry.averagePerformance < 84).length}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      ) : (
+        ) : (
         <div className="bg-white rounded-lg shadow-sm border p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Team Performance Analysis</h3>
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Team Performance Leaderboard</h3>
           <div className="text-center py-12">
             <Users className="mx-auto h-12 w-12 text-gray-400 mb-4" />
             <p className="text-gray-500 mb-2">No performance data available for this period</p>
             <p className="text-sm text-gray-400">Add performance records in the Performance Tracking section to see analysis</p>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 };
