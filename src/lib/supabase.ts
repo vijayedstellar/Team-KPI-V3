@@ -46,6 +46,7 @@ export type KPITarget = {
   monthly_target: number;
   annual_target: number;
   designation: string;
+  role?: string; // For backward compatibility
   created_at: string;
 };
 

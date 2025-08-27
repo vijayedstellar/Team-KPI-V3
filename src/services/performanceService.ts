@@ -211,6 +211,37 @@ export const performanceService = {
     return data || [];
   },
 
+  async getAnalystPeriodPerformance(
+    analystId: string, 
+    period: {
+      startMonth: number;
+      startYear: number;
+      endMonth: number;
+      endYear: number;
+    }
+  ): Promise<PerformanceRecord[]> {
+    const { data, error } = await supabase
+      .from('performance_records')
+      .select('*')
+      .eq('team_member_id', analystId)
+      .gte('year', period.startYear)
+      .lte('year', period.endYear)
+      .order('year')
+      .order('month');
+    
+    if (error) throw error;
+    
+    // Filter records to match the exact month range
+    const filteredData = (data || []).filter(record => {
+      const recordDate = new Date(record.year, parseInt(record.month) - 1);
+      const startDate = new Date(period.startYear, period.startMonth - 1);
+      const endDate = new Date(period.endYear, period.endMonth - 1);
+      
+      return recordDate >= startDate && recordDate <= endDate;
+    });
+    
+    return filteredData;
+  },
   // Role management
   async getRoles(): Promise<Designation[]> {
     const { data, error } = await supabase

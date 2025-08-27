@@ -7,6 +7,7 @@ import type { PerformanceRecord, Analyst, KPITarget } from '../lib/supabase';
 import PerformanceCategoryChart from './PerformanceCategoryChart';
 import PerformanceIndicator from './PerformanceIndicator';
 import { getPerformanceCategoryStats } from '../utils/performanceCategories';
+import { generateYearRange, getMonthOptions } from '../utils/dateUtils';
 
 const Reports: React.FC = () => {
   const [performanceData, setPerformanceData] = useState<PerformanceRecord[]>([]);
@@ -14,7 +15,7 @@ const Reports: React.FC = () => {
   const [targets, setTargets] = useState<KPITarget[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAnalyst, setSelectedAnalyst] = useState<string>('');
-  const [selectedYear, setSelectedYear] = useState<number>(2025);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<string>('');
 
   useEffect(() => {
@@ -52,7 +53,9 @@ const Reports: React.FC = () => {
     const analystPerformance: { [key: string]: any } = {};
 
     performanceData.forEach(record => {
-      const analystName = record.analysts?.name || 'Unknown';
+      const analyst = analysts.find(a => a.id === record.team_member_id);
+      const analystName = analyst?.name || 'Unknown';
+      
       if (!analystPerformance[analystName]) {
         analystPerformance[analystName] = {
           totalOutreaches: 0,
@@ -62,7 +65,8 @@ const Reports: React.FC = () => {
           totalNewBlogs: 0,
           totalBlogOptimizations: 0,
           totalTopKeywords: 0,
-          monthsRecorded: 0
+          monthsRecorded: 0,
+          designation: analyst?.designation || 'Unknown'
         };
       }
 
@@ -185,6 +189,13 @@ const Reports: React.FC = () => {
     window.URL.revokeObjectURL(url);
   };
 
+  const months = getMonthOptions().map(month => ({
+    value: month.value.toString().padStart(2, '0'),
+    label: month.label
+  }));
+  
+  const years = generateYearRange(2024, 15); // 15 years into the future
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -238,8 +249,9 @@ const Reports: React.FC = () => {
               onChange={(e) => setSelectedYear(parseInt(e.target.value))}
               className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value={2025}>2025</option>
-              <option value={2026}>2026</option>
+              {generateYearRange(2024, 20).map((year) => (
+                <option key={year} value={year}>{year}</option>
+              ))}
             </select>
           </div>
           
@@ -251,18 +263,9 @@ const Reports: React.FC = () => {
               className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[150px]"
             >
               <option value="">All Months</option>
-              <option value="01">January</option>
-              <option value="02">February</option>
-              <option value="03">March</option>
-              <option value="04">April</option>
-              <option value="05">May</option>
-              <option value="06">June</option>
-              <option value="07">July</option>
-              <option value="08">August</option>
-              <option value="09">September</option>
-              <option value="10">October</option>
-              <option value="11">November</option>
-              <option value="12">December</option>
+              {months.map((month) => (
+                <option key={month.value} value={month.value}>{month.label}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -417,6 +420,7 @@ const Reports: React.FC = () => {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Analyst</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Designation</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Months Recorded</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Outreaches</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Live Links</th>
@@ -428,6 +432,7 @@ const Reports: React.FC = () => {
               {Object.entries(analystPerformance).map(([analystName, performance]) => (
                 <tr key={analystName}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{analystName}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{performance.designation}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{performance.monthsRecorded}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{performance.totalOutreaches.toLocaleString()}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{performance.totalLiveLinks}</td>

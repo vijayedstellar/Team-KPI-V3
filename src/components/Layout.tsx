@@ -138,10 +138,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => 
               <Menu className="w-5 h-5" />
             </button>
             
-            <div className="flex items-center space-x-4">
+            <div className="hidden md:flex items-center space-x-4">
               <Calendar className="w-5 h-5 text-gray-400" />
               <span className="text-sm text-gray-600">
-                Performance Period: Sep 2025 - Sep 2026
+                Marketing KPI Tracker Dashboard
               </span>
             </div>
             

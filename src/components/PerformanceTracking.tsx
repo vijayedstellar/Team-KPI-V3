@@ -6,6 +6,7 @@ import type { PerformanceRecord, Analyst, KPITarget } from '../lib/supabase';
 import PerformanceIndicator from './PerformanceIndicator';
 import ActionItemsPanel from './ActionItemsPanel';
 import { generateActionItems } from '../utils/actionItemsGenerator';
+import { generateYearRange, getCurrentYear, getMonthOptions } from '../utils/dateUtils';
 import toast from 'react-hot-toast';
 
 const PerformanceTracking: React.FC = () => {
@@ -25,7 +26,7 @@ const PerformanceTracking: React.FC = () => {
   const [formData, setFormData] = useState({
     team_member_id: '',
     month: new Date().getMonth() + 1 < 10 ? `0${new Date().getMonth() + 1}` : `${new Date().getMonth() + 1}`,
-    year: new Date().getFullYear(),
+    year: getCurrentYear(),
   });
 
   const [kpiValues, setKpiValues] = useState<{ [key: string]: number }>({});
@@ -162,7 +163,9 @@ const PerformanceTracking: React.FC = () => {
     // Load KPI values from the record
     const analyst = analysts.find(a => a.id === record.team_member_id);
     if (analyst) {
-      const analystKPIs = targets.filter(target => target.designation === analyst.designation);
+      const analystKPIs = targets.filter(target => 
+        target.designation === analyst.designation || target.role === analyst.designation
+      );
       const recordKpiValues: { [key: string]: number } = {};
       analystKPIs.forEach(target => {
         recordKpiValues[target.kpi_name] = (record as any)[target.kpi_name] || 0;
@@ -192,7 +195,7 @@ const PerformanceTracking: React.FC = () => {
     setFormData({
       team_member_id: '',
       month: new Date().getMonth() + 1 < 10 ? `0${new Date().getMonth() + 1}` : `${new Date().getMonth() + 1}`,
-      year: new Date().getFullYear(),
+      year: getCurrentYear(),
     });
     setKpiValues({});
     setEditingRecord(null);
@@ -200,7 +203,9 @@ const PerformanceTracking: React.FC = () => {
   };
 
   const getTargetForKPI = (kpiName: string, role: string) => {
-    const target = targets.find(t => t.kpi_name === kpiName && t.role === role);
+    const target = targets.find(t => 
+      t.kpi_name === kpiName && (t.designation === role || t.role === role)
+    );
     return target?.monthly_target || 0;
   };
 
@@ -238,20 +243,12 @@ const PerformanceTracking: React.FC = () => {
     ).join(' ');
   };
 
-  const months = [
-    { value: '01', label: 'January' },
-    { value: '02', label: 'February' },
-    { value: '03', label: 'March' },
-    { value: '04', label: 'April' },
-    { value: '05', label: 'May' },
-    { value: '06', label: 'June' },
-    { value: '07', label: 'July' },
-    { value: '08', label: 'August' },
-    { value: '09', label: 'September' },
-    { value: '10', label: 'October' },
-    { value: '11', label: 'November' },
-    { value: '12', label: 'December' }
-  ];
+  const months = getMonthOptions().map(month => ({
+    value: month.value.toString().padStart(2, '0'),
+    label: month.label
+  }));
+  
+  const years = generateYearRange(2024, 15); // 15 years into the future
 
   if (loading) {
     return (
@@ -326,8 +323,9 @@ const PerformanceTracking: React.FC = () => {
               onChange={(e) => setSelectedYear(parseInt(e.target.value))}
               className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value={2025}>2025</option>
-              <option value={2026}>2026</option>
+              {generateYearRange(2024, 20).map((year) => (
+                <option key={year} value={year}>{year}</option>
+              ))}
             </select>
           </div>
           
@@ -382,16 +380,18 @@ const PerformanceTracking: React.FC = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {performanceRecords.map((record) => {
-                const analyst = analysts.find(a => a.id === record.analyst_id);
-                const analystKPIs = analyst ? targets.filter(t => t.designation === analyst.designation) : [];
+                const analyst = analysts.find(a => a.id === record.team_member_id);
+                const analystKPIs = analyst ? targets.filter(t => 
+                  t.designation === analyst.designation || t.role === analyst.designation
+                ) : [];
                 
                 return (
                   <tr key={record.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {record.team_members?.name || analysts.find(a => a.id === record.team_member_id)?.name || 'Unknown'}
+                      {analyst?.name || 'Unknown'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {record.team_members?.designation || analysts.find(a => a.id === record.team_member_id)?.designation || 'Unknown'}
+                      {analyst?.designation || 'Unknown'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {months[parseInt(record.month) - 1]?.label} {record.year}
@@ -414,51 +414,41 @@ const PerformanceTracking: React.FC = () => {
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                               </svg>
-                              Show Details ({(() => {
-                                const teamMember = analysts.find(a => a.id === record.team_member_id);
-                                const memberKPIs = teamMember ? targets.filter(t => t.designation === teamMember.designation) : [];
-                                return memberKPIs.length;
-                              })()} KPIs)
+                              Show Details ({analystKPIs.length} KPIs)
                             </>
                           )}
                         </button>
                         
                         {expandedRows.has(record.id) && (
                           <div className="space-y-1">
-                            {(() => {
-                              const teamMember = analysts.find(a => a.id === record.team_member_id);
-                              const memberKPIs = teamMember ? targets.filter(t => t.designation === teamMember.designation) : [];
-                              return memberKPIs.map((target) => {
-                                const actualValue = (record as any)[target.kpi_name] || 0;
-                                const achievementRate = calculateAchievementRate(actualValue, target.monthly_target);
-                                
-                                return (
-                                  <div key={target.kpi_name} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                                    <span className="text-xs font-medium text-gray-700">
-                                      {formatKPIName(target.kpi_name)}:
+                            {analystKPIs.map((target) => {
+                              const actualValue = (record as any)[target.kpi_name] || 0;
+                              const achievementRate = calculateAchievementRate(actualValue, target.monthly_target);
+                              
+                              return (
+                                <div key={target.kpi_name} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                                  <span className="text-xs font-medium text-gray-700">
+                                    {formatKPIName(target.kpi_name)}:
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-600">
+                                      {actualValue}/{target.monthly_target}
                                     </span>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-xs text-gray-600">
-                                        {actualValue}/{target.monthly_target}
-                                      </span>
-                                      <PerformanceIndicator 
-                                        achievementPercentage={achievementRate}
-                                        showLabel={false}
-                                        size="sm"
-                                      />
-                                    </div>
+                                    <PerformanceIndicator 
+                                      achievementPercentage={achievementRate}
+                                      showLabel={false}
+                                      size="sm"
+                                    />
                                   </div>
-                                );
-                              });
-                            })()}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {(() => {
-                        const teamMember = analysts.find(a => a.id === record.team_member_id);
-                        const analystKPIs = teamMember ? targets.filter(t => t.designation === teamMember.designation) : [];
                         const achievements = analystKPIs.map(target => {
                           const actualValue = (record as any)[target.kpi_name] || 0;
                           return calculateAchievementRate(actualValue, target.monthly_target);
@@ -594,8 +584,9 @@ const PerformanceTracking: React.FC = () => {
                       onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) })}
                       className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
-                      <option value={2025}>2025</option>
-                      <option value={2026}>2026</option>
+                      {generateYearRange(2024, 20).map((year) => (
+                        <option key={year} value={year}>{year}</option>
+                      ))}
                     </select>
                   </div>
                 </div>

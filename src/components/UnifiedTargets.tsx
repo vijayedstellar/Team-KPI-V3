@@ -75,7 +75,7 @@ const UnifiedTargets: React.FC = () => {
       const kpiName = target.kpi_name || 'unknown_kpi';
       return {
         id: target.id,
-        role: target.designation || 'Unknown Role',
+        role: target.designation || target.role || 'Unknown Role',
         kpi_name: target.kpi_name,
         kpi_display_name: kpiDef?.display_name || formatKPIName(kpiName),
         monthly_target: target.monthly_target,
@@ -105,7 +105,7 @@ const UnifiedTargets: React.FC = () => {
     try {
       await performanceService.createOrUpdateKPITarget({
         kpi_name: record.kpi_name,
-        role: record.role,
+        designation: record.role,
         monthly_target: editValues.monthly_target,
         annual_target: editValues.annual_target
       });
@@ -143,7 +143,7 @@ const UnifiedTargets: React.FC = () => {
     
     // Check if this combination already exists
     const existingRecord = targets.find(
-      t => t.role === newRecord.role && t.kpi_name === newRecord.kpi_name
+      t => t.designation === newRecord.role && t.kpi_name === newRecord.kpi_name
     );
     
     if (existingRecord) {
@@ -152,7 +152,10 @@ const UnifiedTargets: React.FC = () => {
     }
 
     try {
-      await performanceService.createOrUpdateKPITarget(newRecord);
+      await performanceService.createOrUpdateKPITarget({
+        ...newRecord,
+        designation: newRecord.role
+      });
       toast.success('Target added successfully');
       setShowAddModal(false);
       setNewRecord({
