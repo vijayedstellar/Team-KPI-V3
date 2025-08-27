@@ -7,7 +7,6 @@ import Dashboard from './components/Dashboard';
 import AnalystManagement from './components/AnalystManagement';
 import PerformanceTracking from './components/PerformanceTracking';
 import TargetManagement from './components/TargetManagement';
-import Reports from './components/Reports';
 import AnnualReportGenerator from './components/AnnualReportGenerator';
 import UnifiedTargets from './components/UnifiedTargets';
 import Settings from './components/Settings';
@@ -73,8 +72,6 @@ function App() {
         return <PerformanceTracking />;
       case 'targets':
         return <UnifiedTargets />;
-      case 'reports':
-        return <Reports />;
       case 'annual-reports':
         return <AnnualReportGenerator />;
       case 'settings':
