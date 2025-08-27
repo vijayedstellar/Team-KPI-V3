@@ -38,12 +38,15 @@ const Dashboard: React.FC = () => {
   const [targets, setTargets] = useState<KPITarget[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState({
-    startMonth: 8, // August
+    startMonth: new Date().getMonth() + 1, // Current month
     startYear: getCurrentYear(),
-    endMonth: 9, // September
-    endYear: getCurrentYear() + 1
+    endMonth: new Date().getMonth() + 1, // Current month
+    endYear: getCurrentYear()
   });
   const [showPeriodSelector, setShowPeriodSelector] = useState(false);
+
+  // Load user KPI mappings for dashboard
+  const [userKPIMappings, setUserKPIMappings] = useState<UserKPIMapping[]>([]);
 
   useEffect(() => {
     loadDashboardData();
@@ -56,27 +59,31 @@ const Dashboard: React.FC = () => {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      const [performanceRecords, teamMembersList, kpiTargets] = await Promise.all([
+      const [performanceRecords, teamMembersList, kpiTargets, userMappings] = await Promise.all([
         performanceService.getPerformanceRecords(),
         analystService.getAllAnalysts(),
-        performanceService.getKPITargets()
+        performanceService.getKPITargets(),
+        performanceService.getUserKPIMappings()
       ]);
 
       console.log('Dashboard loaded data:', {
         performanceRecords: performanceRecords.length,
         teamMembers: teamMembersList.length,
-        targets: kpiTargets.length
+        targets: kpiTargets.length,
+        userMappings: userMappings.length
       });
 
       setAllPerformanceData(performanceRecords);
       setTeamMembers(teamMembersList);
       setTargets(kpiTargets);
+      setUserKPIMappings(userMappings);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
       // Don't use mock data - show empty state instead
       setAllPerformanceData([]);
       setTeamMembers([]);
       setTargets([]);
+      setUserKPIMappings([]);
     } finally {
       setLoading(false);
     }
@@ -114,10 +121,10 @@ const Dashboard: React.FC = () => {
 
   const resetToDefaultPeriod = () => {
     setSelectedPeriod({
-      startMonth: 8, // August
+      startMonth: new Date().getMonth() + 1, // Current month
       startYear: getCurrentYear(),
-      endMonth: 9, // September
-      endYear: getCurrentYear() + 1
+      endMonth: new Date().getMonth() + 1, // Current month
+      endYear: getCurrentYear()
     });
   };
 
@@ -228,8 +235,28 @@ const Dashboard: React.FC = () => {
     const teamMember = teamMembers.find(tm => tm.id === teamMemberId);
     if (!teamMember) return [];
     
-    // For now, use designation-based targets since user-specific mappings aren't loaded in dashboard
-    // In a full implementation, you'd load user KPI mappings here too
+    // Use the same logic as Performance Tracking - check for user-specific mappings first
+    const userMappings = userKPIMappings.filter(mapping => 
+      mapping.team_member_id === teamMemberId && mapping.is_active && mapping.monthly_target > 0
+    );
+    
+    // Convert user mappings to KPITarget format
+    const userSpecificTargets: KPITarget[] = userMappings.map(mapping => ({
+      id: mapping.id,
+      kpi_name: mapping.kpi_name,
+      monthly_target: mapping.monthly_target,
+      annual_target: mapping.annual_target,
+      designation: teamMember.designation,
+      role: teamMember.designation,
+      created_at: mapping.created_at
+    }));
+    
+    // If user has specific mappings, ONLY use those
+    if (userSpecificTargets.length > 0) {
+      return userSpecificTargets;
+    }
+    
+    // Fallback: If no user-specific mappings, use designation defaults with targets > 0
     const designationTargets = targets.filter(target => 
       (target.designation === teamMember.designation || target.role === teamMember.designation) &&
       target.monthly_target > 0
@@ -254,6 +281,7 @@ const Dashboard: React.FC = () => {
       criticalKPIs: number;
       goodKPIs: number;
       lastMonthRecord: PerformanceRecord | null;
+      hasValidData: boolean;
     }> = [];
 
     teamMembers.forEach(teamMember => {
@@ -267,6 +295,7 @@ const Dashboard: React.FC = () => {
       let validKPICount = 0;
       let criticalCount = 0;
       let goodCount = 0;
+      let hasAnyValidData = false;
       const kpiPerformances: Array<{
         kpi: string;
         actual: number;
@@ -282,6 +311,11 @@ const Dashboard: React.FC = () => {
         
         const totalTarget = target.monthly_target * memberRecords.length;
         const achievement = totalTarget > 0 ? Math.round((totalActual / totalTarget) * 100) : 0;
+        
+        // Check if this KPI has meaningful data
+        if (totalActual > 0 || totalTarget > 0) {
+          hasAnyValidData = true;
+        }
         
         kpiPerformances.push({
           kpi: target.kpi_name,
@@ -315,12 +349,18 @@ const Dashboard: React.FC = () => {
         totalAchievement,
         criticalKPIs: criticalCount,
         goodKPIs: goodCount,
-        lastMonthRecord: sortedRecords[0] || null
+        lastMonthRecord: sortedRecords[0] || null,
+        hasValidData: hasAnyValidData
       });
     });
 
+    // Filter out entries without valid data and sort by performance
+    const validEntries = leaderboardData.filter(entry => 
+      entry.hasValidData && entry.averagePerformance > 0
+    );
+    
     // Sort by average performance (highest first)
-    return leaderboardData.sort((a, b) => b.averagePerformance - a.averagePerformance);
+    return validEntries.sort((a, b) => b.averagePerformance - a.averagePerformance);
   };
 
   const formatKPIName = (kpiName: string) => {
@@ -446,6 +486,11 @@ const Dashboard: React.FC = () => {
       {/* Team Performance Analysis */}
       {(() => {
         const leaderboardData = getLeaderboardData();
+          
+          // Find the actual top performer (minimum 50% performance to be considered)
+          const qualifiedPerformers = leaderboardData.filter(entry => entry.averagePerformance >= 50);
+          const topPerformer = qualifiedPerformers.length > 0 ? qualifiedPerformers[0] : null;
+          
         return leaderboardData.length > 0 ? (
         <div className="bg-white rounded-lg shadow-sm border p-6">
           <div className="flex items-center justify-between mb-6">
@@ -464,7 +509,7 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Top Performer Highlight */}
-          {leaderboardData.length > 0 && (
+          {topPerformer && (
             <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border-2 border-yellow-200 rounded-lg p-6 mb-6">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-12 h-12 bg-yellow-500 rounded-full flex items-center justify-center">
@@ -472,20 +517,20 @@ const Dashboard: React.FC = () => {
                 </div>
                 <div>
                   <h4 className="text-lg font-bold text-yellow-800">🏆 Top Performer of the Period</h4>
-                  <p className="text-sm text-yellow-700">Highest average performance across all assigned KPIs</p>
+                  <p className="text-sm text-yellow-700">Highest average performance across assigned KPIs (minimum 50% required)</p>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <p className="text-sm text-yellow-700">Team Member</p>
-                  <p className="text-xl font-bold text-yellow-900">{leaderboardData[0].teamMember.name}</p>
-                  <p className="text-sm text-yellow-600">{leaderboardData[0].teamMember.designation}</p>
+                  <p className="text-xl font-bold text-yellow-900">{topPerformer.teamMember.name}</p>
+                  <p className="text-sm text-yellow-600">{topPerformer.teamMember.designation}</p>
                 </div>
                 <div>
                   <p className="text-sm text-yellow-700">Average Performance</p>
-                  <p className="text-3xl font-bold text-yellow-900">{leaderboardData[0].averagePerformance}%</p>
+                  <p className="text-3xl font-bold text-yellow-900">{topPerformer.averagePerformance}%</p>
                   <PerformanceIndicator 
-                    achievementPercentage={leaderboardData[0].averagePerformance}
+                    achievementPercentage={topPerformer.averagePerformance}
                     showLabel={false}
                     size="sm"
                   />
@@ -493,12 +538,28 @@ const Dashboard: React.FC = () => {
                 <div>
                   <p className="text-sm text-yellow-700">Performance Summary</p>
                   <div className="flex items-center gap-4 text-sm">
-                    <span className="text-green-600 font-medium">{leaderboardData[0].goodKPIs} Good KPIs</span>
-                    {leaderboardData[0].criticalKPIs > 0 && (
-                      <span className="text-red-600 font-medium">{leaderboardData[0].criticalKPIs} Critical KPIs</span>
+                    <span className="text-green-600 font-medium">{topPerformer.goodKPIs} Good KPIs</span>
+                    {topPerformer.criticalKPIs > 0 && (
+                      <span className="text-red-600 font-medium">{topPerformer.criticalKPIs} Critical KPIs</span>
                     )}
                   </div>
-                  <p className="text-xs text-yellow-600 mt-1">{leaderboardData[0].totalRecords} months tracked</p>
+                  <p className="text-xs text-yellow-600 mt-1">{topPerformer.totalRecords} months tracked</p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* No Qualified Top Performer Message */}
+          {!topPerformer && leaderboardData.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-6 mb-6">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="w-6 h-6 text-amber-600" />
+                <div>
+                  <h4 className="text-lg font-bold text-amber-800">No Top Performer This Period</h4>
+                  <p className="text-sm text-amber-700">
+                    No team member achieved the minimum 50% performance threshold to be considered top performer.
+                    Focus on improving KPI achievements across the team.
+                  </p>
                 </div>
               </div>
             </div>
@@ -520,7 +581,7 @@ const Dashboard: React.FC = () => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {leaderboardData.map((entry, index) => {
-                  const isTopPerformer = index === 0;
+                  const isTopPerformer = topPerformer && entry.teamMember.id === topPerformer.teamMember.id;
                   const rowClass = isTopPerformer 
                     ? 'bg-gradient-to-r from-yellow-50 to-amber-50 border-l-4 border-yellow-400' 
                     : 'hover:bg-gray-50';
