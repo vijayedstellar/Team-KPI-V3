@@ -315,13 +315,24 @@ export const generateActionItems = (
   targets: KPITarget[]
 ): ActionItem[] => {
   const actionItems: ActionItem[] = [];
-  const kpiNames = ['outreaches', 'live_links', 'high_da_links', 'content_distribution', 'new_blogs', 'blog_optimizations', 'top_5_keywords'];
+  
+  // Get all available KPI names from targets
+  const kpiNames = [...new Set(targets.map(t => t.kpi_name))];
+  
+  console.log('Available KPI names from targets:', kpiNames);
 
   kpiNames.forEach((kpiName, index) => {
     const target = targets.find(t => t.kpi_name === kpiName);
     if (!target) return;
 
     const currentValue = currentRecord[kpiName as keyof PerformanceRecord] as number;
+    
+    // Skip if the KPI doesn't exist in the performance record
+    if (currentValue === undefined || currentValue === null) {
+      console.log(`Skipping KPI ${kpiName} - not found in performance record`);
+      return;
+    }
+    
     const achievementPercentage = Math.round((currentValue / target.monthly_target) * 100);
     const category = getPerformanceCategory(achievementPercentage);
 
@@ -330,7 +341,17 @@ export const generateActionItems = (
     
     // Get recommendations based on category
     const kpiRecommendations = KPI_RECOMMENDATIONS[kpiName as keyof typeof KPI_RECOMMENDATIONS];
-    const categoryRecommendations = kpiRecommendations[category.name.toLowerCase() as keyof typeof kpiRecommendations];
+    
+    // Fallback recommendations if specific KPI recommendations don't exist
+    const categoryRecommendations = kpiRecommendations?.[category.name.toLowerCase() as keyof typeof kpiRecommendations] || {
+      title: `${formatKPIName(kpiName)} Performance - ${category.name}`,
+      recommendations: [
+        `Review ${formatKPIName(kpiName)} strategy and processes`,
+        `Set specific goals for improving ${formatKPIName(kpiName)}`,
+        `Monitor ${formatKPIName(kpiName)} trends more closely`,
+        `Seek guidance on best practices for ${formatKPIName(kpiName)}`
+      ]
+    };
 
     if (categoryRecommendations) {
       let severity: ActionItem['severity'] = 'info';
