@@ -136,8 +136,6 @@ const AnnualReportGenerator: React.FC = () => {
       }
 
       // Get KPI targets for this analyst's designation
-      // TODO: Integrate with user-specific mappings when available
-      // For now, use designation-based targets
       const analystTargets = targets.filter(target => 
         target.designation === analyst.designation || target.role === analyst.designation
       );

@@ -3,7 +3,6 @@ import { Plus, Edit, Calendar, TrendingUp, BarChart3, AlertTriangle, X, Save, Tr
 import { performanceService } from '../services/performanceService';
 import { analystService } from '../services/analytService';
 import type { PerformanceRecord, Analyst, KPITarget } from '../lib/supabase';
-import type { UserKPIMapping } from '../lib/supabase';
 import PerformanceIndicator from './PerformanceIndicator';
 import ActionItemsPanel from './ActionItemsPanel';
 import { generateActionItems } from '../utils/actionItemsGenerator';
@@ -14,7 +13,6 @@ const PerformanceTracking: React.FC = () => {
   const [performanceRecords, setPerformanceRecords] = useState<PerformanceRecord[]>([]);
   const [analysts, setAnalysts] = useState<Analyst[]>([]);
   const [targets, setTargets] = useState<KPITarget[]>([]);
-  const [userKPIMappings, setUserKPIMappings] = useState<UserKPIMapping[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingRecord, setEditingRecord] = useState<PerformanceRecord | null>(null);
@@ -40,11 +38,10 @@ const PerformanceTracking: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [records, analystsList, kpiTargets, userMappings] = await Promise.all([
+      const [records, analystsList, kpiTargets] = await Promise.all([
         performanceService.getPerformanceRecords(selectedAnalyst || undefined),
         analystService.getAllAnalysts(),
-        performanceService.getKPITargets(),
-        performanceService.getUserKPIMappings()
+        performanceService.getKPITargets()
       ]);
 
       let filteredRecords = records;
@@ -63,7 +60,6 @@ const PerformanceTracking: React.FC = () => {
       setPerformanceRecords(filteredRecords);
       setAnalysts(analystsList);
       setTargets(kpiTargets);
-      setUserKPIMappings(userMappings);
     } catch (error) {
       console.error('Error loading performance data:', error);
       toast.error('Failed to load performance data');
@@ -76,28 +72,7 @@ const PerformanceTracking: React.FC = () => {
     const analyst = analysts.find(a => a.id === analystId);
     if (!analyst) return [];
     
-    // Check if user has specific KPI mappings
-    const userMappings = userKPIMappings.filter(mapping => mapping.team_member_id === analystId);
-    
-    if (userMappings.length > 0) {
-      // User has specific mappings - use only those
-      console.log(`Using user-specific KPIs for ${analyst.name}:`, userMappings.map(m => m.kpi_name));
-      return userMappings.map(mapping => ({
-        id: mapping.id,
-        kpi_name: mapping.kpi_name,
-        monthly_target: mapping.monthly_target,
-        annual_target: mapping.annual_target,
-        designation: analyst.designation,
-        role: analyst.designation,
-        created_at: mapping.created_at
-      }));
-    } else {
-      // No user-specific mappings - fall back to designation-based targets
-      console.log(`Using designation-based KPIs for ${analyst.name} (${analyst.designation})`);
-      return targets.filter(target => 
-        target.designation === analyst.designation || target.role === analyst.designation
-      );
-    }
+    return targets.filter(target => target.designation === analyst.designation);
   };
 
   const handleAnalystChange = (analystId: string) => {
@@ -593,20 +568,10 @@ const PerformanceTracking: React.FC = () => {
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between rounded-t-lg">
-              <h3 className="text-lg font-semibold text-gray-900">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
                 {editingRecord ? 'Edit Performance Record' : 'Add Performance Record'}
               </h3>
-              <button
-                onClick={resetForm}
-                className="p-2 text-gray-400 hover:text-gray-600 transition-colors rounded-full hover:bg-gray-100"
-                title="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <div className="p-6">
               
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

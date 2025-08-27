@@ -77,26 +77,3 @@ export type AdminUser = {
   created_at: string;
   updated_at: string;
 };
-
-export type UserKPIMapping = {
-  id: string;
-  team_member_id: string;
-  kpi_name: string;
-  monthly_target: number;
-  annual_target: number;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-  team_members?: TeamMember;
-};
-
-export type EffectiveTarget = {
-  kpi_name: string;
-  monthly_target: number;
-  annual_target: number;
-  source: 'user' | 'designation';
-};
-
-// For backward compatibility
-export type Analyst = TeamMember;
-export type Role = Designation;
