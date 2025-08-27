@@ -76,28 +76,48 @@ const PerformanceTracking: React.FC = () => {
     const analyst = analysts.find(a => a.id === analystId);
     if (!analyst) return [];
     
-    // Check if user has specific KPI mappings
-    const userMappings = userKPIMappings.filter(mapping => mapping.team_member_id === analystId);
+    // Get user-specific KPI mappings
+    const userMappings = userKPIMappings.filter(mapping => 
+      mapping.team_member_id === analystId && mapping.is_active && mapping.monthly_target > 0
+    );
     
-    if (userMappings.length > 0) {
-      // User has specific mappings - use only those
-      console.log(`Using user-specific KPIs for ${analyst.name}:`, userMappings.map(m => m.kpi_name));
-      return userMappings.map(mapping => ({
-        id: mapping.id,
-        kpi_name: mapping.kpi_name,
-        monthly_target: mapping.monthly_target,
-        annual_target: mapping.annual_target,
-        designation: analyst.designation,
-        role: analyst.designation,
-        created_at: mapping.created_at
-      }));
-    } else {
-      // No user-specific mappings - fall back to designation-based targets
-      console.log(`Using designation-based KPIs for ${analyst.name} (${analyst.designation})`);
-      return targets.filter(target => 
-        target.designation === analyst.designation || target.role === analyst.designation
-      );
+    // Convert user mappings to KPITarget format
+    const userSpecificTargets: KPITarget[] = userMappings.map(mapping => ({
+      id: mapping.id,
+      kpi_name: mapping.kpi_name,
+      monthly_target: mapping.monthly_target,
+      annual_target: mapping.annual_target,
+      designation: analyst.designation,
+      role: analyst.designation,
+      created_at: mapping.created_at
+    }));
+    
+    // If user has specific mappings, ONLY use those
+    if (userSpecificTargets.length > 0) {
+      console.log(`User ${analyst.name} has ${userSpecificTargets.length} user-specific KPIs:`, 
+        userSpecificTargets.map(t => t.kpi_name));
+      return userSpecificTargets;
     }
+    
+    // Fallback: If no user-specific mappings, use designation defaults with targets > 0
+    const designationTargets = targets.filter(target => 
+      (target.designation === analyst.designation || target.role === analyst.designation) &&
+      target.monthly_target > 0
+    );
+    
+    console.log(`KPIs for ${analyst.name}:`, {
+      userMappings: userSpecificTargets.length,
+      designationTargets: designationTargets.length,
+      finalTargets: designationTargets.length,
+      kpiNames: designationTargets.map(t => t.kpi_name)
+    });
+    
+    return designationTargets;
+  };
+
+  // Get effective targets for a specific analyst (used for action items)
+  const getEffectiveTargetsForAnalyst = (analystId: string): KPITarget[] => {
+    return getKPIsForAnalyst(analystId);
   };
 
   const handleAnalystChange = (analystId: string) => {
@@ -251,24 +271,17 @@ const PerformanceTracking: React.FC = () => {
       record.id !== selectedRecordForActions.id
     );
     
-    // Get targets for this team member's designation
-    const teamMember = analysts.find(a => a.id === selectedRecordForActions.team_member_id);
-    const relevantTargets = teamMember ? targets.filter(target => 
-      target.designation === teamMember.designation || target.role === teamMember.designation
-    ) : [];
+    // Get ONLY the effective targets for this specific user
+    const relevantTargets = getEffectiveTargetsForAnalyst(selectedRecordForActions.team_member_id);
     
     console.log('Action Items Debug:', {
       selectedRecord: selectedRecordForActions,
-      teamMember: teamMember?.name,
-      designation: teamMember?.designation,
+      teamMember: (() => {
+        const member = analysts.find(a => a.id === selectedRecordForActions.team_member_id);
+        return member ? `${member.name} (${member.designation})` : 'Unknown';
+      })(),
       previousRecords: previousRecords.length,
       relevantTargets: relevantTargets.length,
-      allTargets: targets.length
-    });
-    
-    console.log('Detailed Action Items Debug:', {
-      recordColumns: Object.keys(selectedRecordForActions),
-      targetKPIs: relevantTargets.map(t => ({ name: t.kpi_name, target: t.monthly_target })),
       recordValues: relevantTargets.map(t => ({ 
         kpi: t.kpi_name, 
         value: (selectedRecordForActions as any)[t.kpi_name],
@@ -433,9 +446,7 @@ const PerformanceTracking: React.FC = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {performanceRecords.map((record) => {
                 const analyst = analysts.find(a => a.id === record.team_member_id);
-                const analystKPIs = analyst ? targets.filter(t => 
-                  t.designation === analyst.designation || t.role === analyst.designation
-                ) : [];
+                const analystKPIs = analyst ? getKPIsForAnalyst(analyst.id) : [];
                 
                 return (
                   <tr key={record.id} className="hover:bg-gray-50">
