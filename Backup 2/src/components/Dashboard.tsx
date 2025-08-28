@@ -205,10 +205,7 @@ const Dashboard: React.FC = () => {
           (t.designation === teamMember.designation || t.role === teamMember.designation)
         );
         if (target && target.monthly_target > 0) {
-          const actualValue = record[kpiName as keyof PerformanceRecord] as number;
-          // Note: We don't have kpiDefinitions in Dashboard yet, so we'll assume numeric for now
-          // This can be enhanced later if needed
-          const achievement = Math.round((actualValue / target.monthly_target) * 100);
+          const achievement = Math.round((record[kpiName as keyof PerformanceRecord] as number / target.monthly_target) * 100);
           totalAchievement += achievement;
           validKPICount++;
           
@@ -694,6 +691,41 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Performance Distribution Chart */}
+          <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
+              <h4 className="font-medium text-gray-700 mb-3">Performance Distribution</h4>
+              <PerformanceCategoryChart stats={categoryStats} />
+            </div>
+            <div>
+              <h4 className="font-medium text-gray-700 mb-3">Team Performance Summary</h4>
+              <div className="space-y-3">
+                <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-green-700">Top Performers (120%+)</span>
+                    <span className="text-lg font-bold text-green-800">
+                      {leaderboardData.filter(entry => entry.averagePerformance >= 120).length}
+                    </span>
+                  </div>
+                </div>
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-blue-700">On Target (84-119%)</span>
+                    <span className="text-lg font-bold text-blue-800">
+                      {leaderboardData.filter(entry => entry.averagePerformance >= 84 && entry.averagePerformance < 120).length}
+                    </span>
+                  </div>
+                </div>
+                <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-red-700">Needs Attention (&lt;84%)</span>
+                    <span className="text-lg font-bold text-red-800">
+                      {leaderboardData.filter(entry => entry.averagePerformance < 84).length}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         ) : (
         <div className="bg-white rounded-lg shadow-sm border p-6">

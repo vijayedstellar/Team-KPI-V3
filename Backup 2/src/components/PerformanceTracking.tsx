@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Calendar, TrendingUp, BarChart3, AlertTriangle, X, Save, Trash2 } from 'lucide-react';
 import { performanceService } from '../services/performanceService';
 import { analystService } from '../services/analytService';
-import type { PerformanceRecord, Analyst, KPITarget, KPIDefinition } from '../lib/supabase';
+import type { PerformanceRecord, Analyst, KPITarget } from '../lib/supabase';
 import type { UserKPIMapping } from '../lib/supabase';
 import PerformanceIndicator from './PerformanceIndicator';
 import ActionItemsPanel from './ActionItemsPanel';
@@ -15,7 +15,6 @@ const PerformanceTracking: React.FC = () => {
   const [analysts, setAnalysts] = useState<Analyst[]>([]);
   const [targets, setTargets] = useState<KPITarget[]>([]);
   const [userKPIMappings, setUserKPIMappings] = useState<UserKPIMapping[]>([]);
-  const [kpiDefinitions, setKpiDefinitions] = useState<KPIDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingRecord, setEditingRecord] = useState<PerformanceRecord | null>(null);
@@ -41,12 +40,11 @@ const PerformanceTracking: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [records, analystsList, kpiTargets, userMappings, kpiDefs] = await Promise.all([
+      const [records, analystsList, kpiTargets, userMappings] = await Promise.all([
         performanceService.getPerformanceRecords(selectedAnalyst || undefined),
         analystService.getAllAnalysts(),
         performanceService.getKPITargets(),
-        performanceService.getUserKPIMappings(),
-        performanceService.getKPIDefinitions()
+        performanceService.getUserKPIMappings()
       ]);
 
       let filteredRecords = records;
@@ -66,7 +64,6 @@ const PerformanceTracking: React.FC = () => {
       setAnalysts(analystsList);
       setTargets(kpiTargets);
       setUserKPIMappings(userMappings);
-      setKpiDefinitions(kpiDefs);
     } catch (error) {
       console.error('Error loading performance data:', error);
       toast.error('Failed to load performance data');
@@ -292,7 +289,7 @@ const PerformanceTracking: React.FC = () => {
       }))
     });
     
-    return generateActionItems(selectedRecordForActions, previousRecords, relevantTargets, kpiDefinitions);
+    return generateActionItems(selectedRecordForActions, previousRecords, relevantTargets);
   };
 
   const toggleRowExpansion = (recordId: string) => {
@@ -489,34 +486,23 @@ const PerformanceTracking: React.FC = () => {
                           <div className="space-y-1">
                             {analystKPIs.map((target) => {
                               const actualValue = (record as any)[target.kpi_name] || 0;
-                              const kpiDef = kpiDefinitions.find(kpi => kpi.name === target.kpi_name);
-                              const isDeliveredType = kpiDef?.unit === 'delivered';
+                              const achievementRate = calculateAchievementRate(actualValue, target.monthly_target);
                               
                               return (
                                 <div key={target.kpi_name} className="flex items-center justify-between bg-gray-50 p-2 rounded">
                                   <span className="text-xs font-medium text-gray-700">
                                     {formatKPIName(target.kpi_name)}:
                                   </span>
-                                  {isDeliveredType ? (
-                                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                      actualValue === 1 
-                                        ? 'bg-green-100 text-green-800' 
-                                        : 'bg-red-100 text-red-800'
-                                    }`}>
-                                      {actualValue === 1 ? 'Delivered' : 'Not Delivered'}
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-600">
+                                      {actualValue}/{target.monthly_target}
                                     </span>
-                                  ) : (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-xs text-gray-600">
-                                        {actualValue}/{target.monthly_target}
-                                      </span>
-                                      <PerformanceIndicator 
-                                        achievementPercentage={calculateAchievementRate(actualValue, target.monthly_target)}
-                                        showLabel={false}
-                                        size="sm"
-                                      />
-                                    </div>
-                                  )}
+                                    <PerformanceIndicator 
+                                      achievementPercentage={achievementRate}
+                                      showLabel={false}
+                                      size="sm"
+                                    />
+                                  </div>
                                 </div>
                               );
                             })}
@@ -528,15 +514,7 @@ const PerformanceTracking: React.FC = () => {
                       {(() => {
                         const achievements = analystKPIs.map(target => {
                           const actualValue = (record as any)[target.kpi_name] || 0;
-                          const kpiDef = kpiDefinitions.find(kpi => kpi.name === target.kpi_name);
-                          const isDeliveredType = kpiDef?.unit === 'delivered';
-                          
-                          if (isDeliveredType) {
-                            // For delivered type, 1 = 100%, 0 = 0%
-                            return actualValue === 1 ? 100 : 0;
-                          } else {
-                            return calculateAchievementRate(actualValue, target.monthly_target);
-                          }
+                          return calculateAchievementRate(actualValue, target.monthly_target);
                         });
                         const avgAchievement = achievements.length > 0 
                           ? Math.round(achievements.reduce((sum, val) => sum + val, 0) / achievements.length)
@@ -610,7 +588,6 @@ const PerformanceTracking: React.FC = () => {
             <div className="p-6">
               <ActionItemsPanel
                 actionItems={getActionItems()}
-                kpiDefinitions={kpiDefinitions}
                 analystName={(() => {
                   const teamMember = analysts.find(a => a.id === selectedRecordForActions.team_member_id);
                   return teamMember?.name || 'Unknown Team Member';
@@ -705,73 +682,33 @@ const PerformanceTracking: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {getKPIsForAnalyst(formData.team_member_id).map((target) => (
                         <div key={target.kpi_name} className="bg-gray-50 p-4 rounded-lg">
-                          {(() => {
-                            const kpiDef = kpiDefinitions.find(kpi => kpi.name === target.kpi_name);
-                            const isDeliveredType = kpiDef?.unit === 'delivered';
-                            
-                            return (
-                              <>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             {formatKPIName(target.kpi_name)}
                           </label>
-                                {isDeliveredType ? (
-                                  <>
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <span className="text-xs text-gray-500">Status:</span>
-                                      <span className="text-sm font-semibold text-blue-600">Delivered/Not Delivered</span>
-                                    </div>
-                                    <select
-                                      value={kpiValues[target.kpi_name] || 0}
-                                      onChange={(e) => setKpiValues({ 
-                                        ...kpiValues, 
-                                        [target.kpi_name]: parseInt(e.target.value) 
-                                      })}
-                                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    >
-                                      <option value={0}>Not Delivered</option>
-                                      <option value={1}>Delivered</option>
-                                    </select>
-                                    <div className="mt-2">
-                                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                                        kpiValues[target.kpi_name] === 1 
-                                          ? 'bg-green-100 text-green-800' 
-                                          : 'bg-red-100 text-red-800'
-                                      }`}>
-                                        {kpiValues[target.kpi_name] === 1 ? 'Delivered' : 'Not Delivered'}
-                                      </span>
-                                    </div>
-                                  </>
-                                ) : (
-                                  <>
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <span className="text-xs text-gray-500">Target:</span>
-                                      <span className="text-sm font-semibold text-blue-600">{target.monthly_target}</span>
-                                    </div>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      value={kpiValues[target.kpi_name] || 0}
-                                      onChange={(e) => setKpiValues({ 
-                                        ...kpiValues, 
-                                        [target.kpi_name]: parseInt(e.target.value) || 0 
-                                      })}
-                                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                      placeholder="Enter achieved value"
-                                    />
-                                    {kpiValues[target.kpi_name] !== undefined && target.monthly_target > 0 && (
-                                      <div className="mt-2">
-                                        <PerformanceIndicator 
-                                          achievementPercentage={calculateAchievementRate(kpiValues[target.kpi_name], target.monthly_target)}
-                                          showLabel={true}
-                                          size="sm"
-                                        />
-                                      </div>
-                                    )}
-                                  </>
-                                )}
-                              </>
-                            );
-                          })()}
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs text-gray-500">Target:</span>
+                            <span className="text-sm font-semibold text-blue-600">{target.monthly_target}</span>
+                          </div>
+                          <input
+                            type="number"
+                            min="0"
+                            value={kpiValues[target.kpi_name] || 0}
+                            onChange={(e) => setKpiValues({ 
+                              ...kpiValues, 
+                              [target.kpi_name]: parseInt(e.target.value) || 0 
+                            })}
+                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Enter achieved value"
+                          />
+                          {kpiValues[target.kpi_name] !== undefined && target.monthly_target > 0 && (
+                            <div className="mt-2">
+                              <PerformanceIndicator 
+                                achievementPercentage={calculateAchievementRate(kpiValues[target.kpi_name], target.monthly_target)}
+                                showLabel={true}
+                                size="sm"
+                              />
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

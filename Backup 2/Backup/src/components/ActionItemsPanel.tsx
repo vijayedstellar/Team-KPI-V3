@@ -1,21 +1,20 @@
 import React from 'react';
 import { AlertTriangle, AlertCircle, Info, CheckCircle, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import type { ActionItem } from '../utils/actionItemsGenerator';
+import { formatKPIName } from '../utils/actionItemsGenerator';
 
 interface ActionItemsPanelProps {
   actionItems: ActionItem[];
   analystName?: string;
   month?: string;
   year?: number;
-  kpiDefinitions?: any[];
 }
 
 const ActionItemsPanel: React.FC<ActionItemsPanelProps> = ({ 
   actionItems, 
   analystName = "Team Member",
   month,
-  year,
-  kpiDefinitions = []
+  year 
 }) => {
   const getSeverityIcon = (severity: ActionItem['severity']) => {
     switch (severity) {
@@ -175,12 +174,6 @@ const ActionItemsPanel: React.FC<ActionItemsPanelProps> = ({
 };
 
 const ActionItemCard: React.FC<{ item: ActionItem }> = ({ item }) => {
-  const formatKPIName = (kpiName: string) => {
-    return kpiName.split('_').map(word => 
-      word.charAt(0).toUpperCase() + word.slice(1)
-    ).join(' ');
-  };
-
   const getSeverityStyles = (severity: ActionItem['severity']) => {
     switch (severity) {
       case 'critical':

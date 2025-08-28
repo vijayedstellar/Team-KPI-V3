@@ -18,7 +18,6 @@ const UnifiedTargets: React.FC = () => {
   const [targets, setTargets] = useState<KPITarget[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [kpiDefinitions, setKPIDefinitions] = useState<KPIDefinition[]>([]);
-  const [userKPIMappings, setUserKPIMappings] = useState<any[]>([]);
   const [unifiedRecords, setUnifiedRecords] = useState<UnifiedTargetRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -26,7 +25,6 @@ const UnifiedTargets: React.FC = () => {
   const [kpiFilter, setKpiFilter] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedUser, setSelectedUser] = useState('');
   
   const [editValues, setEditValues] = useState<{
     monthly_target: number;
@@ -49,61 +47,30 @@ const UnifiedTargets: React.FC = () => {
 
   useEffect(() => {
     createUnifiedRecords();
-  }, [targets, roles, kpiDefinitions, userKPIMappings]);
+  }, [targets, roles, kpiDefinitions]);
 
   const loadAllData = async () => {
     try {
       setLoading(true);
-      console.log('UnifiedTargets: Starting to load data...');
-      
-      const [targetsData, designationsData, kpiData, userMappingsData] = await Promise.all([
+      const [targetsData, rolesData, kpiData] = await Promise.all([
         performanceService.getKPITargets(),
-        performanceService.getDesignations(),
-        performanceService.getKPIDefinitions(),
-        performanceService.getUserKPIMappings()
+        performanceService.getRoles(),
+        performanceService.getKPIDefinitions()
       ]);
       
-      console.log('UnifiedTargets: Raw data loaded:', {
-        targetsData,
-        designationsData,
-        kpiData,
-        userMappingsData
-      });
-      
       setTargets(targetsData);
-      setRoles(designationsData);
+      setRoles(rolesData);
       setKPIDefinitions(kpiData);
-      setUserKPIMappings(userMappingsData);
-      
-      console.log('UnifiedTargets loaded data:', {
-        targets: targetsData.length,
-        roles: designationsData.length,
-        kpis: kpiData.length,
-        userMappings: userMappingsData.length
-      });
     } catch (error) {
       console.error('Error loading data:', error);
-      toast.error(`Failed to load data: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      // Set empty arrays to show empty state instead of loading forever
-      setTargets([]);
-      setRoles([]);
-      setKPIDefinitions([]);
-      setUserKPIMappings([]);
+      toast.error('Failed to load data');
     } finally {
       setLoading(false);
     }
   };
 
   const createUnifiedRecords = () => {
-    console.log('Creating unified records from:', {
-      targets: targets.length,
-      roles: roles.length,
-      kpiDefinitions: kpiDefinitions.length,
-      userMappings: userKPIMappings.length
-    });
-    
-    // Combine both kpi_targets and user_kpi_mappings data
-    const targetRecords: UnifiedTargetRecord[] = targets.map(target => {
+    const records: UnifiedTargetRecord[] = targets.map(target => {
       const kpiDef = kpiDefinitions.find(kpi => kpi.name === target.kpi_name);
       const kpiName = target.kpi_name || 'unknown_kpi';
       return {
@@ -117,25 +84,6 @@ const UnifiedTargets: React.FC = () => {
       };
     });
     
-    // Add user-specific mappings as individual records
-    const userMappingRecords: UnifiedTargetRecord[] = userKPIMappings.map(mapping => {
-      const kpiDef = kpiDefinitions.find(kpi => kpi.name === mapping.kpi_name);
-      const teamMember = mapping.team_members;
-      return {
-        id: `user-${mapping.id}`,
-        role: `${teamMember?.name || 'Unknown'} (${teamMember?.designation || 'Unknown'})`,
-        kpi_name: mapping.kpi_name,
-        kpi_display_name: kpiDef?.display_name || formatKPIName(mapping.kpi_name),
-        monthly_target: mapping.monthly_target,
-        annual_target: mapping.annual_target,
-        created_at: mapping.created_at
-      };
-    });
-    
-    // Combine both types of records
-    const records = [...targetRecords, ...userMappingRecords];
-    
-    console.log('Created unified records:', records.length);
     setUnifiedRecords(records);
   };
 
@@ -181,13 +129,7 @@ const UnifiedTargets: React.FC = () => {
     }
 
     try {
-      // Check if this is a user-specific mapping (ID starts with 'user-')
-      if (id.startsWith('user-')) {
-        const realId = id.replace('user-', '');
-        await performanceService.deleteUserKPIMapping(realId);
-      } else {
-        await performanceService.deleteKPITarget(id);
-      }
+      await performanceService.deleteKPITarget(id);
       toast.success('Target deleted successfully');
       loadAllData();
     } catch (error) {
@@ -250,26 +192,12 @@ const UnifiedTargets: React.FC = () => {
   const getAvailableKPIs = () => {
     if (!newRecord.role) return [];
     
-    // Get KPIs that don't already have targets for the selected designation
+    // Get KPIs that don't already have targets for the selected role
     const existingKPIsForRole = targets
       .filter(t => t.role === newRecord.role)
       .map(t => t.kpi_name);
     
     return kpiDefinitions.filter(kpi => !existingKPIsForRole.includes(kpi.name));
-  };
-
-  const getUniqueUsers = () => {
-    const users = userKPIMappings
-      .map(mapping => mapping.team_members)
-      .filter((member, index, self) => 
-        member && self.findIndex(m => m?.id === member.id) === index
-      );
-    return users.filter(Boolean);
-  };
-
-  const getSelectedUserName = () => {
-    const user = getUniqueUsers().find(u => u.id === selectedUser);
-    return user?.name || '';
   };
 
   const filteredRecords = unifiedRecords.filter(record => {
@@ -278,9 +206,10 @@ const UnifiedTargets: React.FC = () => {
       (record.kpi_display_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (record.kpi_name || '').toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesUser = !selectedUser || record.role.includes(getSelectedUserName());
+    const matchesRoleFilter = !roleFilter || record.role === roleFilter;
+    const matchesKPIFilter = !kpiFilter || record.kpi_name === kpiFilter;
     
-    return matchesSearch && matchesUser;
+    return matchesSearch && matchesRoleFilter && matchesKPIFilter;
   });
 
   if (loading) {
@@ -311,18 +240,18 @@ const UnifiedTargets: React.FC = () => {
       {/* Description */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <p className="text-blue-800">
-          Manage all KPI targets across different designations. Set monthly targets and annual targets will auto-calculate (13 months cycle).
+          Manage all KPI targets across different roles. Set monthly targets and annual targets will auto-calculate (13 months cycle).
         </p>
       </div>
 
       {/* Search and Filters */}
       <div className="bg-white rounded-lg shadow-sm border p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
               type="text"
-              placeholder="Search team members or KPIs..."
+              placeholder="Search roles or KPIs..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10 pr-4 py-2 border rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -330,38 +259,37 @@ const UnifiedTargets: React.FC = () => {
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Filter by User</label>
             <select
-              value={selectedUser}
-              onChange={(e) => setSelectedUser(e.target.value)}
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value="">All Users</option>
-              {getUniqueUsers().map((user) => (
-                <option key={user.id} value={user.id}>{user.name}</option>
+              <option value="">All Roles</option>
+              {roles.map((role) => (
+                <option key={role.id} value={role.name}>{role.name}</option>
               ))}
             </select>
           </div>
-        </div>
-        
-        <div className="mt-4 flex items-center justify-between">
+          
+          <div>
+            <select
+              value={kpiFilter}
+              onChange={(e) => setKpiFilter(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">All KPIs</option>
+              {kpiDefinitions.map((kpi) => (
+                <option key={kpi.id} value={kpi.name}>{kpi.display_name || formatKPIName(kpi.name)}</option>
+              ))}
+            </select>
+          </div>
+          
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-400" />
             <span className="text-sm text-gray-600">
-              Showing {filteredRecords.length} of {unifiedRecords.length} records
+              {filteredRecords.length} of {unifiedRecords.length} records
             </span>
           </div>
-          {(searchTerm || selectedUser) && (
-            <button
-              onClick={() => {
-                setSearchTerm('');
-                setSelectedUser('');
-              }}
-              className="text-sm text-blue-600 hover:text-blue-800 underline"
-            >
-              Clear filters
-            </button>
-          )}
         </div>
       </div>
 
@@ -371,7 +299,7 @@ const UnifiedTargets: React.FC = () => {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Designation</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">KPI</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Monthly Target</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Annual Target (13 months)</th>
@@ -474,7 +402,7 @@ const UnifiedTargets: React.FC = () => {
             <h3 className="text-lg font-medium text-gray-900 mb-2">No targets found</h3>
             <p className="text-gray-500 mb-4">
               {searchTerm || roleFilter || kpiFilter 
-                ? 'No targets match your current filters.'
+                ? 'No targets match your current filters.' 
                 : 'No KPI targets have been set yet.'
               }
             </p>
@@ -491,6 +419,45 @@ const UnifiedTargets: React.FC = () => {
         )}
       </div>
 
+      {/* Summary Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-lg shadow-sm border p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Targets</p>
+              <p className="text-3xl font-bold text-gray-900">{unifiedRecords.length}</p>
+            </div>
+            <div className="bg-blue-50 p-3 rounded-full">
+              <Target className="w-6 h-6 text-blue-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Active Roles</p>
+              <p className="text-3xl font-bold text-gray-900">{roles.length}</p>
+            </div>
+            <div className="bg-green-50 p-3 rounded-full">
+              <div className="w-6 h-6 bg-green-600 rounded-full"></div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Available KPIs</p>
+              <p className="text-3xl font-bold text-gray-900">{kpiDefinitions.length}</p>
+            </div>
+            <div className="bg-purple-50 p-3 rounded-full">
+              <div className="w-6 h-6 bg-purple-600 rounded-full"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Add Target Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -499,14 +466,14 @@ const UnifiedTargets: React.FC = () => {
             
             <form onSubmit={handleAddRecord} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Choose Designation</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Choose Role</label>
                 <select
                   required
                   value={newRecord.role}
                   onChange={(e) => setNewRecord({ ...newRecord, role: e.target.value, kpi_name: '' })}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  <option value="">Choose Designation</option>
+                  <option value="">Choose Role</option>
                   {roles.map((role) => (
                     <option key={role.id} value={role.name}>{role.name}</option>
                   ))}
@@ -530,10 +497,10 @@ const UnifiedTargets: React.FC = () => {
                   ))}
                 </select>
                 {!newRecord.role && (
-                  <p className="text-sm text-gray-500 mt-1">Please choose a designation first</p>
+                  <p className="text-sm text-gray-500 mt-1">Please choose a role first</p>
                 )}
                 {newRecord.role && getAvailableKPIs().length === 0 && (
-                  <p className="text-sm text-gray-500 mt-1">All KPIs already have targets for this designation</p>
+                  <p className="text-sm text-gray-500 mt-1">All KPIs already have targets for this role</p>
                 )}
               </div>
               
@@ -564,7 +531,7 @@ const UnifiedTargets: React.FC = () => {
                   placeholder="Auto-calculated from monthly target (Monthly × 13)"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  {targets.length} designation-level + {userKPIMappings.length} user-specific
+                  Annual target = Monthly target × 13 months
                 </p>
               </div>
               

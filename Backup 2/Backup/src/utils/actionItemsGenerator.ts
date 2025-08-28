@@ -312,8 +312,7 @@ const KPI_RECOMMENDATIONS = {
 export const generateActionItems = (
   currentRecord: PerformanceRecord,
   previousRecords: PerformanceRecord[],
-  targets: KPITarget[],
-  kpiDefinitions: any[] = []
+  targets: KPITarget[]
 ): ActionItem[] => {
   const actionItems: ActionItem[] = [];
   
@@ -326,10 +325,6 @@ export const generateActionItems = (
   kpiNames.forEach((kpiName, index) => {
     const target = targets.find(t => t.kpi_name === kpiName);
     if (!target) return;
-
-    // Find the KPI definition to determine if it's a delivered type
-    const kpiDefinition = kpiDefinitions.find(def => def.name === kpiName);
-    const isDeliveredType = kpiDefinition?.unit === 'delivered';
 
     const currentValue = currentRecord[kpiName as keyof PerformanceRecord] as number;
     
@@ -354,18 +349,15 @@ export const generateActionItems = (
     // Get recommendations based on category
     const kpiRecommendations = KPI_RECOMMENDATIONS[kpiName as keyof typeof KPI_RECOMMENDATIONS];
     
-    // Get the proper display name from KPI definitions
-    const kpiDisplayName = kpiDefinition?.display_name || formatKPIName(kpiName);
-    
     // Fallback recommendations if specific KPI recommendations don't exist
     const categoryRecommendations = kpiRecommendations?.[category.name.toLowerCase() as keyof typeof kpiRecommendations] || {
-      title: `${kpiDisplayName} Performance - ${category.name}`,
+      title: `${formatKPIName(kpiName)} Performance - ${category.name}`,
       recommendations: [
-        `Review ${kpiDisplayName} strategy and processes`,
-        `Set specific goals for improving ${kpiDisplayName}`,
-        `Monitor ${kpiDisplayName} trends more closely`,
-        `Ensure ${kpiDisplayName} data is being tracked properly`,
-        `Verify ${kpiDisplayName} targets are realistic and achievable`
+        `Review ${formatKPIName(kpiName)} strategy and processes`,
+        `Set specific goals for improving ${formatKPIName(kpiName)}`,
+        `Monitor ${formatKPIName(kpiName)} trends more closely`,
+        `Ensure ${formatKPIName(kpiName)} data is being tracked properly`,
+        `Verify ${formatKPIName(kpiName)} targets are realistic and achievable`
       ]
     };
 
@@ -400,18 +392,9 @@ export const generateActionItems = (
       const description = `Current: ${currentValue} | Target: ${target.monthly_target} | Achievement: ${achievementPercentage}% | Trend: ${trend.trend} (${trend.changePercentage > 0 ? '+' : ''}${trend.changePercentage}%)`;
       
       // Enhanced description with actual counts for better context
-      let enhancedDescription;
-      if (isDeliveredType) {
-        const currentStatus = currentValue === 1 ? 'Delivered' : 'Not Delivered';
-        const previousStatus = trend.previous === 1 ? 'Delivered' : 'Not Delivered';
-        enhancedDescription = trend.previous >= 0 
-          ? `Current: ${currentStatus} (Previous: ${previousStatus}) | Target: Delivered | Achievement: ${achievementPercentage}%`
-          : `Current: ${currentStatus} | Target: Delivered | Achievement: ${achievementPercentage}%`;
-      } else {
-        enhancedDescription = trend.previous > 0 
-          ? `Current: ${currentValue} (Previous: ${trend.previous}) | Target: ${target.monthly_target} | Achievement: ${achievementPercentage}% | Trend: ${trend.trend} (${trend.changePercentage > 0 ? '+' : ''}${trend.changePercentage}%)`
-          : `Current: ${currentValue} | Target: ${target.monthly_target} | Achievement: ${achievementPercentage}% | Trend: ${trend.trend} (${trend.changePercentage > 0 ? '+' : ''}${trend.changePercentage}%)`;
-      }
+      const enhancedDescription = trend.previous > 0 
+        ? `Current: ${currentValue} (Previous: ${trend.previous}) | Target: ${target.monthly_target} | Achievement: ${achievementPercentage}% | Trend: ${trend.trend} (${trend.changePercentage > 0 ? '+' : ''}${trend.changePercentage}%)`
+        : `Current: ${currentValue} | Target: ${target.monthly_target} | Achievement: ${achievementPercentage}% | Trend: ${trend.trend} (${trend.changePercentage > 0 ? '+' : ''}${trend.changePercentage}%)`;
 
       actionItems.push({
         id: `${kpiName}-${currentRecord.id}`,
@@ -474,9 +457,15 @@ const analyzeTrend = (
 };
 
 export const formatKPIName = (kpiName: string): string => {
-  // This function should use the KPI definitions passed to generateActionItems
-  // For now, return a formatted version of the KPI name
-  return kpiName.split('_').map(word => 
-    word.charAt(0).toUpperCase() + word.slice(1)
-  ).join(' ');
+  const kpiDisplayNames: { [key: string]: string } = {
+    outreaches: 'Monthly Outreaches',
+    live_links: 'Live Links',
+    high_da_links: 'High DA Backlinks (90+)',
+    content_distribution: 'Content Distribution',
+    new_blogs: 'New Blog Contributions',
+    blog_optimizations: 'Blog Optimizations',
+    top_5_keywords: 'Top 5 Ranking Keywords'
+  };
+
+  return kpiDisplayNames[kpiName] || kpiName;
 };

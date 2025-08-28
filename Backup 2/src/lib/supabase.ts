@@ -90,15 +90,6 @@ export type UserKPIMapping = {
   team_members?: TeamMember;
 };
 
-export type KPIDesignationMapping = {
-  id: string;
-  kpi_name: string;
-  designation_name: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-};
-
 export type EffectiveTarget = {
   kpi_name: string;
   monthly_target: number;

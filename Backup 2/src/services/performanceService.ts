@@ -130,23 +130,40 @@ export const performanceService = {
       return mockKPITargets;
     }
     
-    console.log('Fetching KPI targets from Supabase...');
-    
-    const { data, error } = await supabase
+    // Try with 'designation' column first, fallback to 'role' column if it doesn't exist
+    let { data, error } = await supabase
       .from('kpi_targets')
       .select('*')
       .order('designation', { ascending: true })
       .order('kpi_name', { ascending: true });
     
-    console.log('KPI targets query result:', { data, error });
-    
-    if (error) {
-      console.error('Error fetching KPI targets:', error);
-      throw error;
+    // If designation column doesn't exist, try with role column
+    if (error && error.code === '42703' && error.message.includes('designation does not exist')) {
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('kpi_targets')
+        .select('*')
+        .order('role', { ascending: true })
+        .order('kpi_name', { ascending: true });
+      
+      if (fallbackError) {
+        console.warn('Supabase error, falling back to mock data:', fallbackError);
+        return mockKPITargets;
+      }
+      
+      // Map role to designation for consistency
+      data = fallbackData?.map(item => ({
+        ...item,
+        designation: item.role
+      })) || null;
+      error = null;
     }
     
-    console.log('Successfully fetched KPI targets:', data?.length || 0);
-    return data || [];
+    if (error) {
+      console.warn('Supabase error, falling back to mock data:', error);
+      return mockKPITargets;
+    }
+    
+    return data || mockKPITargets;
   },
 
   async getKPITargetsByRole(designation: string): Promise<KPITarget[]> {
@@ -237,10 +254,6 @@ export const performanceService = {
       throw error;
     }
     return data || [];
-  },
-
-  async getDesignations(): Promise<Designation[]> {
-    return this.getRoles(); // Alias for backward compatibility
   },
 
   async createRole(role: Omit<Designation, 'id' | 'created_at'>): Promise<Designation> {
@@ -395,168 +408,41 @@ export const performanceService = {
 
   // User-specific KPI mapping management
   async getUserKPIMappings(teamMemberId?: string): Promise<UserKPIMapping[]> {
-    try {
-      // Always use the user_kpi_mappings_with_details view for consistent data
-      let query = supabase
-        .from('user_kpi_mappings_with_details')
-        .select('*')
-        .order('team_member_name')
-        .order('kpi_name');
+    let query = supabase
+      .from('user_kpi_mappings')
+      .select(`
+        *,
+        team_members!inner (
+          id,
+          name,
+          email,
+          designation
+        )
+      `)
+      .eq('is_active', true)
+      .order('team_member_id')
+      .order('kpi_name');
 
-      if (teamMemberId) {
-        query = query.eq('team_member_id', teamMemberId);
-      }
+    if (teamMemberId) {
+      query = query.eq('team_member_id', teamMemberId);
+    }
 
-      const { data, error } = await query;
-      
-      if (error) {
-        console.warn('user_kpi_mappings_with_details view not available, falling back to basic query:', error);
-        // Fallback to basic query with manual joins
-        let fallbackQuery = supabase
-          .from('user_kpi_mappings')
-          .select(`
-            *,
-            team_members!inner (
-              id,
-              name,
-              email,
-              designation
-            )
-          `)
-          .eq('is_active', true)
-          .order('team_member_id')
-          .order('kpi_name');
-
-        if (teamMemberId) {
-          fallbackQuery = fallbackQuery.eq('team_member_id', teamMemberId);
-        }
-
-        const { data: fallbackData, error: fallbackError } = await fallbackQuery;
-        
-        if (fallbackError) {
-          throw fallbackError;
-        }
-        return fallbackData || [];
-      }
-      
-      // Transform the view result to match UserKPIMapping interface
-      const transformedData = (data || []).map((item: any) => ({
-        id: item.id,
-        team_member_id: item.team_member_id,
-        kpi_name: item.kpi_name,
-        monthly_target: item.monthly_target,
-        annual_target: item.annual_target,
-        is_active: item.is_active,
-        created_at: item.created_at,
-        updated_at: item.updated_at,
-        team_members: {
-          id: item.team_member_id,
-          name: item.team_member_name || 'Unknown',
-          email: item.team_member_email || '',
-          designation: item.team_member_designation || 'Unknown',
-          hire_date: '', // Not needed for this use case
-          status: 'active',
-          created_at: item.created_at,
-          updated_at: item.updated_at
-        }
-      }));
-      
-      console.log('getUserKPIMappings result from view:', {
-        teamMemberId,
-        recordsFound: transformedData.length,
-        mappings: transformedData.map(t => ({
-          user: t.team_members?.name,
-          kpi: t.kpi_name,
-          monthlyTarget: t.monthly_target
-        }))
-      });
-      
-      return transformedData;
-    } catch (error) {
-      console.error('Error fetching user KPI mappings:', error);
+    const { data, error } = await query;
+    
+    if (error) {
       throw error;
     }
-  },
-
-  // New method specifically for the user_kpi_mappings_with_details view
-  async getUserKPIMappingsFromView(teamMemberId?: string): Promise<UserKPIMapping[]> {
-    try {
-      console.log('performanceService: getUserKPIMappingsFromView called with teamMemberId:', teamMemberId);
-      
-      // Always use the user_kpi_mappings_with_details view
-      let query = supabase
-        .from('user_kpi_mappings_with_details')
-        .select('*')
-        .order('team_member_name')
-        .order('kpi_name');
-
-      if (teamMemberId) {
-        query = query.eq('team_member_id', teamMemberId);
-      }
-
-      const { data, error } = await query;
-      
-      if (error) {
-        console.error('Error querying user_kpi_mappings_with_details view:', error);
-        throw new Error(`Failed to fetch user KPI mappings: ${error.message}`);
-      }
-      
-      console.log('Raw data from user_kpi_mappings_with_details view:', data);
-      
-      // Transform the view result to match UserKPIMapping interface
-      const transformedData = (data || []).map((item: any) => ({
-        id: item.id,
-        team_member_id: item.team_member_id,
-        kpi_name: item.kpi_name,
-        monthly_target: item.monthly_target,
-        annual_target: item.annual_target,
-        is_active: item.is_active,
-        created_at: item.created_at,
-        updated_at: item.updated_at,
-        team_members: {
-          id: item.team_member_id,
-          name: item.team_member_name || 'Unknown',
-          email: item.team_member_email || '',
-          designation: item.team_member_designation || 'Unknown',
-          hire_date: '', // Not needed for this use case
-          status: 'active',
-          created_at: item.created_at,
-          updated_at: item.updated_at
-        }
-      }));
-      
-      console.log('Transformed user KPI mappings:', {
-        teamMemberId,
-        recordsFound: transformedData.length,
-        mappings: transformedData.map(t => ({
-          user: t.team_members?.name,
-          kpi: t.kpi_name,
-          monthlyTarget: t.monthly_target
-        }))
-      });
-      
-      return transformedData;
-    } catch (error) {
-      console.error('Error in getUserKPIMappingsFromView:', error);
-      throw error;
-    }
+    return data || [];
   },
 
   async createUserKPIMapping(mapping: Omit<UserKPIMapping, 'id' | 'created_at' | 'updated_at' | 'team_members'>): Promise<UserKPIMapping> {
-    console.log('performanceService: createUserKPIMapping called with:', mapping);
-    
     const { data, error } = await supabase
       .from('user_kpi_mappings')
       .insert([mapping])
       .select()
       .single();
     
-    if (error) {
-      console.error('Supabase error in createUserKPIMapping:', error);
-      throw new Error(`Database error: ${error.message}`);
-    }
-    
-    console.log('performanceService: Successfully created user KPI mapping:', data);
+    if (error) throw error;
     return data;
   },
 
@@ -573,23 +459,12 @@ export const performanceService = {
   },
 
   async deleteUserKPIMapping(id: string): Promise<void> {
-    console.log('Deleting user KPI mapping with ID:', id);
-    
-    // If the ID starts with 'user-', it's from the unified view - extract the real ID
-    const realId = id.startsWith('user-') ? id.replace('user-', '') : id;
-    console.log('Real ID for deletion:', realId);
-    
     const { error } = await supabase
       .from('user_kpi_mappings')
       .delete()
-      .eq('id', realId);
+      .eq('id', id);
     
-    if (error) {
-      console.error('Error deleting user KPI mapping:', error);
-      throw error;
-    }
-    
-    console.log('User KPI mapping deleted successfully');
+    if (error) throw error;
   },
 
   async getEffectiveTargetsForUser(teamMemberId: string): Promise<EffectiveTarget[]> {
@@ -653,102 +528,8 @@ export const performanceService = {
   },
 
   async bulkCreateUserKPIMappings(mappings: Array<Omit<UserKPIMapping, 'id' | 'created_at' | 'updated_at' | 'team_members'>>): Promise<UserKPIMapping[]> {
-    console.log('performanceService: bulkCreateUserKPIMappings called with:', mappings);
-    
-    // Validate input data
-    if (!mappings || mappings.length === 0) {
-      throw new Error('No mappings provided');
-    }
-    
-    // Validate each mapping
-    for (const mapping of mappings) {
-      if (!mapping.team_member_id || !mapping.kpi_name) {
-        throw new Error('Invalid mapping data: team_member_id and kpi_name are required');
-      }
-    }
-    
     const { data, error } = await supabase
       .from('user_kpi_mappings')
-      .insert(mappings)
-      .select();
-    
-    if (error) {
-      console.error('Supabase error in bulkCreateUserKPIMappings:', error);
-      throw new Error(`Database error: ${error.message}`);
-    }
-    
-    console.log('performanceService: Successfully created user KPI mappings:', data?.length || 0);
-    return data || [];
-  },
-
-  async bulkUpsertUserKPIMappings(mappings: Array<Omit<UserKPIMapping, 'id' | 'created_at' | 'updated_at' | 'team_members'>>): Promise<UserKPIMapping[]> {
-    console.log('performanceService: bulkUpsertUserKPIMappings called with:', mappings);
-    
-    // Validate input data
-    if (!mappings || mappings.length === 0) {
-      throw new Error('No mappings provided');
-    }
-    
-    // Validate each mapping
-    for (const mapping of mappings) {
-      if (!mapping.team_member_id || !mapping.kpi_name) {
-        throw new Error('Invalid mapping data: team_member_id and kpi_name are required');
-      }
-    }
-    
-    const { data, error } = await supabase
-      .from('user_kpi_mappings')
-      .upsert(mappings, {
-        onConflict: 'team_member_id,kpi_name'
-      })
-      .select();
-    
-    if (error) {
-      console.error('Supabase error in bulkUpsertUserKPIMappings:', error);
-      throw new Error(`Database error: ${error.message}`);
-    }
-    
-    console.log('performanceService: Successfully upserted user KPI mappings:', data?.length || 0);
-    return data || [];
-  },
-  // KPI to Designation Mappings management
-  async getKPIDesignationMappings(): Promise<KPIDesignationMapping[]> {
-    const { data, error } = await supabase
-      .from('kpi_designation_mappings')
-      .select('*')
-      .eq('is_active', true)
-      .order('designation_name')
-      .order('kpi_name');
-    
-    if (error) {
-      throw error;
-    }
-    return data || [];
-  },
-
-  async createKPIDesignationMapping(mapping: Omit<KPIDesignationMapping, 'id' | 'created_at' | 'updated_at'>): Promise<KPIDesignationMapping> {
-    const { data, error } = await supabase
-      .from('kpi_designation_mappings')
-      .insert([mapping])
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
-  },
-
-  async deleteKPIDesignationMapping(id: string): Promise<void> {
-    const { error } = await supabase
-      .from('kpi_designation_mappings')
-      .delete()
-      .eq('id', id);
-    
-    if (error) throw error;
-  },
-
-  async bulkCreateKPIDesignationMappings(mappings: Array<Omit<KPIDesignationMapping, 'id' | 'created_at' | 'updated_at'>>): Promise<KPIDesignationMapping[]> {
-    const { data, error } = await supabase
-      .from('kpi_designation_mappings')
       .insert(mappings)
       .select();
     

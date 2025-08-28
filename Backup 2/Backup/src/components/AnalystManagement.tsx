@@ -2,21 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Search, Mail, Calendar } from 'lucide-react';
 import { analystService } from '../services/analytService';
 import { performanceService } from '../services/performanceService';
-import type { TeamMember, Designation } from '../lib/supabase';
+import type { Analyst, Role } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
 const AnalystManagement: React.FC = () => {
-  const [analysts, setAnalysts] = useState<TeamMember[]>([]);
-  const [designations, setDesignations] = useState<Designation[]>([]);
+  const [analysts, setAnalysts] = useState<Analyst[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [editingAnalyst, setEditingAnalyst] = useState<TeamMember | null>(null);
+  const [editingAnalyst, setEditingAnalyst] = useState<Analyst | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     hire_date: new Date().toISOString().split('T')[0],
-    designation: '',
+    department: '',
     status: 'active' as 'active' | 'inactive'
   });
 
@@ -27,16 +27,16 @@ const AnalystManagement: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [analystsData, designationsData] = await Promise.all([
+      const [analystsData, rolesData] = await Promise.all([
         analystService.getAllAnalysts(),
-        performanceService.getDesignations()
+        performanceService.getRoles()
       ]);
       setAnalysts(analystsData);
-      setDesignations(designationsData);
+      setRoles(rolesData);
       
-      // Set default designation to first designation if available
-      if (designationsData.length > 0 && !formData.designation) {
-        setFormData(prev => ({ ...prev, designation: designationsData[0].name }));
+      // Set default department to first role if available
+      if (rolesData.length > 0 && !formData.department) {
+        setFormData(prev => ({ ...prev, department: rolesData[0].name }));
       }
     } catch (error) {
       console.error('Error loading data:', error);
@@ -65,13 +65,13 @@ const AnalystManagement: React.FC = () => {
     }
   };
 
-  const handleEdit = (analyst: TeamMember) => {
+  const handleEdit = (analyst: Analyst) => {
     setEditingAnalyst(analyst);
     setFormData({
       name: analyst.name,
       email: analyst.email,
       hire_date: analyst.hire_date,
-      designation: analyst.designation,
+      department: analyst.department,
       status: analyst.status
     });
     setShowModal(true);
@@ -97,7 +97,7 @@ const AnalystManagement: React.FC = () => {
       name: '',
       email: '',
       hire_date: new Date().toISOString().split('T')[0],
-      designation: designations.length > 0 ? designations[0].name : '',
+      department: roles.length > 0 ? roles[0].name : '',
       status: 'active'
     });
     setEditingAnalyst(null);
@@ -161,7 +161,7 @@ const AnalystManagement: React.FC = () => {
                   </div>
                 </div>
                 <div className="mt-3 flex items-center gap-2">
-                  <span className="text-sm text-gray-500">{analyst.designation}</span>
+                  <span className="text-sm text-gray-500">{analyst.department}</span>
                   <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
                     analyst.status === 'active' 
                       ? 'bg-green-100 text-green-800' 
@@ -243,13 +243,13 @@ const AnalystManagement: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Designation</label>
                 <select
                   required
-                  value={formData.designation}
-                  onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
+                  value={formData.department}
+                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">Select Designation</option>
-                  {designations.map((designation) => (
-                    <option key={designation.id} value={designation.name}>{designation.name}</option>
+                  {roles.map((role) => (
+                    <option key={role.id} value={role.name}>{role.name}</option>
                   ))}
                 </select>
               </div>
