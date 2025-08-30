@@ -14,6 +14,7 @@ const AnnualReports: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showFullPageReport, setShowFullPageReport] = useState(false);
   const [generatedReport, setGeneratedReport] = useState<any>(null);
   const [generating, setGenerating] = useState(false);
   
@@ -97,7 +98,7 @@ const AnnualReports: React.FC = () => {
       };
 
       setGeneratedReport(reportData);
-      setShowReportModal(true);
+      setShowFullPageReport(true);
       setShowGenerateModal(false);
       
       toast.success('Annual report generated successfully!');
@@ -113,13 +114,39 @@ const AnnualReports: React.FC = () => {
     if (!generatedReport) return;
     
     try {
+      // Instead of exporting from modal, open full page view first
+      handleOpenFullPageReport();
+      toast.success('Opening full page view for better image export...');
+    } catch (error) {
+      console.error('Error exporting as image:', error);
+      toast.error('Failed to open full page view');
+    }
+  };
+
+  const handleOpenFullPageReport = () => {
+    setShowReportModal(false);
+    setShowFullPageReport(true);
+  };
+
+  const handleBackToModal = () => {
+    setShowFullPageReport(false);
+    setShowReportModal(true);
+  };
+
+  const handleExportFromFullPage = async () => {
+    if (!generatedReport) return;
+    
+    try {
       // Show loading state
       toast.loading('Preparing report for export...', { id: 'image-export' });
       
-      // Wait for any pending renders and ensure all content is loaded
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Scroll to top to ensure we capture from the beginning
+      window.scrollTo(0, 0);
       
-      const reportElement = document.querySelector('.annual-report-container');
+      // Wait for scroll and content to stabilize
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const reportElement = document.querySelector('.fullpage-annual-report');
       if (!reportElement) {
         toast.error('Report content not found');
         return;
@@ -128,31 +155,23 @@ const AnnualReports: React.FC = () => {
       // Update loading message
       toast.loading('Generating high-quality image...', { id: 'image-export' });
       
-      // Wait a bit more to ensure all styles are applied
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Wait for layout to stabilize
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
       const canvas = await html2canvas(reportElement as HTMLElement, {
         scale: 2,
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff',
-        width: Math.max(reportElement.scrollWidth, reportElement.clientWidth),
-        height: Math.max(reportElement.scrollHeight, reportElement.clientHeight),
+        width: reportElement.scrollWidth,
+        height: reportElement.scrollHeight,
         scrollX: 0,
         scrollY: 0,
         logging: false,
         removeContainer: false,
         foreignObjectRendering: false,
         imageTimeout: 15000,
-        onclone: (clonedDoc) => {
-          // Ensure all styles are properly applied in the cloned document
-          const clonedElement = clonedDoc.querySelector('.annual-report-container');
-          if (clonedElement) {
-            clonedElement.style.transform = 'none';
-            clonedElement.style.position = 'static';
-            clonedElement.style.overflow = 'visible';
-          }
-        }
+        letterRendering: true
       });
       
       // Convert canvas to blob and download
@@ -175,7 +194,7 @@ const AnnualReports: React.FC = () => {
       
     } catch (error) {
       console.error('Error exporting as image:', error);
-      toast.error('Failed to export as image', { id: 'image-export' });
+      toast.error('Failed to export as image');
     }
   };
 
@@ -565,14 +584,21 @@ const AnnualReports: React.FC = () => {
       )}
 
       {/* Generated Report Modal */}
-      {showReportModal && generatedReport && (
+      {showReportModal && generatedReport && !showFullPageReport && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto annual-report-modal">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between rounded-t-lg">
               <h3 className="text-lg font-semibold text-gray-900">
                 Annual Performance Report - {generatedReport.teamMember.name}
               </h3>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={handleOpenFullPageReport}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+                >
+                  <FileText className="w-4 h-4" />
+                  Full Page View
+                </button>
                 <button
                   onClick={handleExportAsImage}
                   className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
@@ -592,7 +618,7 @@ const AnnualReports: React.FC = () => {
               </div>
             </div>
             
-            <div className="p-6 annual-report-container">
+            <div className="p-6 annual-report-container" style={{ minHeight: 'auto', height: 'auto' }}>
               <AnnualReportGenerator
                 teamMember={generatedReport.teamMember}
                 performanceRecords={generatedReport.performanceRecords}
@@ -604,6 +630,57 @@ const AnnualReports: React.FC = () => {
                 config={generatedReport.config}
               />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full Page Report View */}
+      {showFullPageReport && generatedReport && (
+        <div className="fixed inset-0 bg-white z-50 overflow-y-auto">
+          {/* Full Page Header */}
+          <div className="sticky top-0 bg-white border-b shadow-sm px-6 py-4 flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Annual Performance Report - {generatedReport.teamMember.name}
+            </h3>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportFromFullPage}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Export as Image
+              </button>
+              <button
+                onClick={handleBackToModal}
+                className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2"
+              >
+                <Eye className="w-4 h-4" />
+                Back to Modal
+              </button>
+              <button
+                onClick={() => {
+                  setShowFullPageReport(false);
+                  setGeneratedReport(null);
+                }}
+                className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+          
+          {/* Full Page Report Content */}
+          <div className="max-w-4xl mx-auto p-8 fullpage-annual-report">
+            <AnnualReportGenerator
+              teamMember={generatedReport.teamMember}
+              performanceRecords={generatedReport.performanceRecords}
+              targets={generatedReport.targets}
+              goals={generatedReport.goals}
+              userMappings={generatedReport.userMappings}
+              kpiDefinitions={generatedReport.kpiDefinitions}
+              period={generatedReport.period}
+              config={generatedReport.config}
+            />
           </div>
         </div>
       )}
