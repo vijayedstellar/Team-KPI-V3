@@ -6,8 +6,8 @@ import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import AnalystManagement from './components/AnalystManagement';
 import PerformanceTracking from './components/PerformanceTracking';
-import TargetManagement from './components/TargetManagement';
-import AnnualReportGenerator from './components/AnnualReportGenerator';
+import AnnualReports from './components/AnnualReports';
+import MockAnnualReport from './components/MockAnnualReport';
 import UnifiedTargets from './components/UnifiedTargets';
 import Settings from './components/Settings';
 import Goals from './components/Goals';
@@ -76,7 +76,7 @@ function App() {
       case 'goals':
         return <Goals />;
       case 'annual-reports':
-        return <AnnualReportGenerator />;
+        return <AnnualReports />;
       case 'settings':
         return <Settings />;
       default:
