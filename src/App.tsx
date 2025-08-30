@@ -10,6 +10,7 @@ import TargetManagement from './components/TargetManagement';
 import AnnualReportGenerator from './components/AnnualReportGenerator';
 import UnifiedTargets from './components/UnifiedTargets';
 import Settings from './components/Settings';
+import Goals from './components/Goals';
 
 function App() {
   const { isAuthenticated, loading } = useAuth();
@@ -72,6 +73,8 @@ function App() {
         return <PerformanceTracking />;
       case 'targets':
         return <UnifiedTargets />;
+      case 'goals':
+        return <Goals />;
       case 'annual-reports':
         return <AnnualReportGenerator />;
       case 'settings':

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Plus, Calendar, User, Target, Award, Edit, Trash2, X } from 'lucide-react';
 import { analystService } from '../services/analytService';
