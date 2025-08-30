@@ -291,43 +291,18 @@ const UserMappingsTab: React.FC<UserMappingsTabProps> = ({ kpiDefinitions, onMap
 
   const downloadAllData = async () => {
     try {
-      // Get all data from the three main tables
-      const [allTeamMembers, allDesignations, allKPIDefinitions] = await Promise.all([
+      // Get all data including user KPI mappings with details
+      const [allUserMappings, allTeamMembers, allDesignations, allKPIDefinitions] = await Promise.all([
+        performanceService.getUserKPIMappingsFromView(), // Use the detailed view
         analystService.getAllAnalysts(),
-        performanceService.getDesignations(),
+        performanceService.getDesignations(), 
         performanceService.getKPIDefinitions()
       ]);
 
-      // Create comprehensive data export
-      const allDataExport = {
-        team_members: allTeamMembers.map(member => ({
-          id: member.id,
-          name: member.name,
-          email: member.email,
-          designation: member.designation,
-          hire_date: member.hire_date,
-          status: member.status
-        })),
-        designations: allDesignations.map(designation => ({
-          id: designation.id,
-          name: designation.name,
-          description: designation.description,
-          is_active: designation.is_active
-        })),
-        kpi_definitions: allKPIDefinitions.map(kpi => ({
-          id: kpi.id,
-          name: kpi.name,
-          display_name: kpi.display_name,
-          description: kpi.description,
-          unit: kpi.unit,
-          is_active: kpi.is_active
-        }))
-      };
-
-      // Create CSV content with all available combinations
+      // Create CSV content from user_kpi_mappings_with_details view
       const headers = [
         'team_member_name',
-        'team_member_designation', 
+        'team_member_designation',
         'team_member_email',
         'kpi_name',
         'kpi_display_name',
@@ -335,7 +310,8 @@ const UserMappingsTab: React.FC<UserMappingsTabProps> = ({ kpiDefinitions, onMap
         'kpi_unit',
         'monthly_target',
         'annual_target',
-        'notes'
+        'is_active',
+        'created_at'
       ];
 
       const csvRows = [];
@@ -343,23 +319,43 @@ const UserMappingsTab: React.FC<UserMappingsTabProps> = ({ kpiDefinitions, onMap
       // Add header
       csvRows.push(headers);
       
-      // Add a row for each team member and KPI combination
-      allTeamMembers.forEach(member => {
-        allKPIDefinitions.forEach(kpi => {
-          csvRows.push([
-            member.name,
-            member.designation,
-            member.email,
-            kpi.name,
-            kpi.display_name,
-            kpi.description || '',
-            kpi.unit,
-            '0', // Default monthly target - user should fill this
-            '0', // Default annual target - user should fill this
-            `Set targets for ${member.name} - ${kpi.display_name}`
-          ]);
-        });
+      // Add rows from user_kpi_mappings_with_details view
+      allUserMappings.forEach(mapping => {
+        csvRows.push([
+          mapping.team_member_name || 'Unknown',
+          mapping.team_member_designation || 'Unknown',
+          mapping.team_member_email || '',
+          mapping.kpi_name,
+          mapping.kpi_display_name || mapping.kpi_name,
+          mapping.kpi_description || '',
+          'count', // Default unit since it's not in the view
+          mapping.monthly_target.toString(),
+          mapping.annual_target.toString(),
+          mapping.is_active.toString(),
+          mapping.created_at
+        ]);
       });
+
+      // If no user mappings exist, create template with all possible combinations
+      if (allUserMappings.length === 0) {
+        allTeamMembers.forEach(member => {
+          allKPIDefinitions.forEach(kpi => {
+            csvRows.push([
+              member.name,
+              member.designation,
+              member.email,
+              kpi.name,
+              kpi.display_name,
+              kpi.description || '',
+              kpi.unit,
+              '0', // Default monthly target - user should fill this
+              '0', // Default annual target - user should fill this
+              'true', // Default active status
+              new Date().toISOString()
+            ]);
+          });
+        });
+      }
 
       const csvContent = csvRows.map(row => 
         row.map(cell => `"${cell}"`).join(',')
@@ -375,7 +371,11 @@ const UserMappingsTab: React.FC<UserMappingsTabProps> = ({ kpiDefinitions, onMap
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
       
-      toast.success(`Downloaded complete data export with ${allTeamMembers.length} team members and ${allKPIDefinitions.length} KPIs`);
+      if (allUserMappings.length > 0) {
+        toast.success(`Downloaded ${allUserMappings.length} user KPI mappings with monthly/annual targets`);
+      } else {
+        toast.success(`Downloaded template with ${allTeamMembers.length} team members and ${allKPIDefinitions.length} KPIs`);
+      }
     } catch (error) {
       console.error('Error downloading all data:', error);
       toast.error('Failed to download all data');
