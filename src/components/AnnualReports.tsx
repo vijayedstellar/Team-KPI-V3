@@ -113,23 +113,46 @@ const AnnualReports: React.FC = () => {
     if (!generatedReport) return;
     
     try {
+      // Show loading state
+      toast.loading('Preparing report for export...', { id: 'image-export' });
+      
+      // Wait for any pending renders and ensure all content is loaded
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       const reportElement = document.querySelector('.annual-report-container');
       if (!reportElement) {
         toast.error('Report content not found');
         return;
       }
       
-      toast.loading('Generating image...', { id: 'image-export' });
+      // Update loading message
+      toast.loading('Generating high-quality image...', { id: 'image-export' });
+      
+      // Wait a bit more to ensure all styles are applied
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       const canvas = await html2canvas(reportElement as HTMLElement, {
-        scale: 2, // Higher quality
+        scale: 2,
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff',
-        width: reportElement.scrollWidth,
-        height: reportElement.scrollHeight,
+        width: Math.max(reportElement.scrollWidth, reportElement.clientWidth),
+        height: Math.max(reportElement.scrollHeight, reportElement.clientHeight),
         scrollX: 0,
-        scrollY: 0
+        scrollY: 0,
+        logging: false,
+        removeContainer: false,
+        foreignObjectRendering: false,
+        imageTimeout: 15000,
+        onclone: (clonedDoc) => {
+          // Ensure all styles are properly applied in the cloned document
+          const clonedElement = clonedDoc.querySelector('.annual-report-container');
+          if (clonedElement) {
+            clonedElement.style.transform = 'none';
+            clonedElement.style.position = 'static';
+            clonedElement.style.overflow = 'visible';
+          }
+        }
       });
       
       // Convert canvas to blob and download
