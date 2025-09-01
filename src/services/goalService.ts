@@ -16,6 +16,10 @@ export interface UserGoal {
   id: string;
   goal_id: string;
   team_member_id: string;
+  goal_name: string;
+  description?: string;
+  deadline: string;
+  priority?: 'High' | 'Medium' | 'Low';
   assigned_date: string;
   status: 'assigned' | 'in_progress' | 'completed' | 'cancelled';
   notes?: string;
@@ -43,7 +47,7 @@ export interface GoalWithAssignments extends Goal {
 }
 
 export const goalService = {
-  // Goal management
+  // Goal management - now using user_goals table as primary source
   async getGoals(deadlineFilter?: {
     startMonth: number;
     startYear: number;
@@ -51,8 +55,8 @@ export const goalService = {
     endYear: number;
   }): Promise<GoalWithAssignments[]> {
     try {
-      // Get all user_goals with team member details
-      let query = supabase
+      // Get all user goals with team member details
+      const { data: userGoalsData, error: userGoalsError } = await supabase
         .from('user_goals')
         .select(`
           *,
@@ -65,42 +69,51 @@ export const goalService = {
         `)
         .order('created_at', { ascending: false });
       
-      const { data, error } = await query;
-      
-      if (error) {
-        throw error;
+      if (userGoalsError) {
+        throw userGoalsError;
       }
 
-      // Group user_goals by goal_id to create goal objects
-      console.log('Raw user_goals data:', data?.length || 0);
-      
-      const goalGroups: { [key: string]: any[] } = {};
-      
-      (data || []).forEach(userGoal => {
-        if (!goalGroups[userGoal.goal_id]) {
-          goalGroups[userGoal.goal_id] = [];
+      console.log('User goals data from user_goals table:', userGoalsData?.length || 0);
+
+      // Group user goals by goal_name to create goals with assignments
+      const goalGroups = (userGoalsData || []).reduce((groups: any, userGoal: any) => {
+        const goalKey = userGoal.goal_name || 'Untitled Goal';
+        if (!groups[goalKey]) {
+          groups[goalKey] = {
+            goal: {
+              id: userGoal.goal_id || userGoal.id,
+              goal_name: userGoal.goal_name,
+              internal_name: userGoal.goal_name?.toLowerCase().replace(/\s+/g, '_') || 'untitled',
+              description: userGoal.description,
+              deadline: userGoal.user_deadline,
+              priority: userGoal.priority || 'Medium',
+              is_active: true,
+              created_at: userGoal.created_at,
+              updated_at: userGoal.updated_at
+            },
+            assignments: []
+          };
         }
-        goalGroups[userGoal.goal_id].push(userGoal);
-      });
+        groups[goalKey].assignments.push(userGoal);
+        return groups;
+      }, {});
 
-      console.log('Grouped goals:', Object.keys(goalGroups).length);
-
-      // Transform grouped data into GoalWithAssignments format
-      const goalsWithAssignments: GoalWithAssignments[] = Object.entries(goalGroups).map(([goalId, userGoals]) => {
-        const firstUserGoal = userGoals[0];
+      // Transform grouped data to GoalWithAssignments format
+      const goalsWithAssignments: GoalWithAssignments[] = Object.values(goalGroups).map((group: any) => {
+        const goal = group.goal;
+        const assignments = group.assignments;
         
         return {
-          id: goalId,
-          goal_name: goalId.split('_').map(word => 
-            word.charAt(0).toUpperCase() + word.slice(1)
-          ).join(' '), // Convert internal_name back to display name
-          internal_name: goalId,
-          description: '', // We don't have description in user_goals, so empty for now
-          deadline: this.getGoalDeadlineFromStorage(goalId) || firstUserGoal.assigned_date, // Try to get real deadline
-          is_active: true,
-          created_at: firstUserGoal.created_at,
-          updated_at: firstUserGoal.updated_at,
-          assigned_members: userGoals.map(userGoal => ({
+          id: goal.id,
+          goal_name: goal.goal_name,
+          internal_name: goal.internal_name,
+          description: goal.description,
+          deadline: goal.deadline,
+          priority: goal.priority || 'Medium',
+          is_active: goal.is_active,
+          created_at: goal.created_at,
+          updated_at: goal.updated_at,
+          assigned_members: assignments.map((userGoal: any) => ({
             id: userGoal.team_members.id,
             name: userGoal.team_members.name,
             designation: userGoal.team_members.designation,
@@ -112,41 +125,24 @@ export const goalService = {
         };
       });
 
-      console.log('Goals before deadline filtering:', goalsWithAssignments.length);
+      console.log('Goals from user_goals table:', goalsWithAssignments.length);
       
       // Apply deadline filtering if provided
       if (deadlineFilter) {
         const periodStart = new Date(deadlineFilter.startYear, deadlineFilter.startMonth - 1, 1);
         const periodEnd = new Date(deadlineFilter.endYear, deadlineFilter.endMonth, 0, 23, 59, 59);
         
-        console.log('Deadline filtering period:', {
-          start: periodStart.toISOString(),
-          end: periodEnd.toISOString()
-        });
-        
         const filteredGoals = goalsWithAssignments.filter(goal => {
           const goalDeadline = new Date(goal.deadline + (goal.deadline.includes('T') ? '' : 'T00:00:00'));
-          const isInPeriod = goalDeadline >= periodStart && goalDeadline <= periodEnd;
-          
-          console.log('Goal deadline check:', {
-            goalName: goal.goal_name,
-            deadline: goal.deadline,
-            parsedDeadline: goalDeadline.toISOString(),
-            periodStart: periodStart.toISOString(),
-            periodEnd: periodEnd.toISOString(),
-            isInPeriod
-          });
-          
-          return isInPeriod;
+          return goalDeadline >= periodStart && goalDeadline <= periodEnd;
         });
         
-        console.log('Goals after deadline filtering:', filteredGoals.length);
         return filteredGoals;
       }
       
       return goalsWithAssignments;
     } catch (error) {
-      console.error('Error fetching goals:', error);
+      console.error('Error fetching goals from user_goals table:', error);
       throw error;
     }
   },
@@ -159,43 +155,51 @@ export const goalService = {
     assignedMembers: string[];
   }): Promise<Goal> {
     try {
-      // Since goals table might not exist, we'll work directly with user_goals
-      // and use goal_name as the identifier
-      const goalId = goalData.goal_name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-
-      // Create user goal assignments
-      if (goalData.assignedMembers.length > 0) {
+      // Generate internal name from goal name
+      const internal_name = goalData.goal_name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      
+      // Create user goal records directly in user_goals table
+      if (goalData.assignedMembers && goalData.assignedMembers.length > 0) {
         const userGoals = goalData.assignedMembers.map(memberId => ({
-          goal_id: goalId,
+          goal_id: `goal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // Generate unique goal_id
           team_member_id: memberId,
+          goal_name: goalData.goal_name,
+          description: goalData.description || '',
+          user_deadline: goalData.deadline,
+          priority: goalData.priority || 'Medium',
           assigned_date: new Date().toISOString().split('T')[0],
           status: 'assigned' as const,
           notes: ''
         }));
 
-        const { error: assignmentError } = await supabase
+        const { data: createdGoals, error: createError } = await supabase
           .from('user_goals')
-          .insert(userGoals);
+          .insert(userGoals)
+          .select()
+          .limit(1)
+          .single();
 
-        if (assignmentError) {
-          throw assignmentError;
+        if (createError) {
+          throw createError;
         }
-      }
 
-      // Return a goal object for consistency
-      return {
-        id: goalId,
-        goal_name: goalData.goal_name,
-        internal_name: goalId,
-        description: goalData.description,
-        deadline: goalData.deadline,
-        priority: goalData.priority || 'Medium',
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
+        // Return goal data in expected format
+        return {
+          id: createdGoals.goal_id,
+          goal_name: goalData.goal_name,
+          internal_name: internal_name,
+          description: goalData.description,
+          deadline: goalData.deadline,
+          priority: goalData.priority || 'Medium',
+          is_active: true,
+          created_at: createdGoals.created_at,
+          updated_at: createdGoals.updated_at
+        };
+      } else {
+        throw new Error('At least one team member must be assigned to the goal');
+      }
     } catch (error) {
-      console.error('Error creating goal:', error);
+      console.error('Error creating goal in user_goals table:', error);
       throw error;
     }
   },
@@ -208,69 +212,103 @@ export const goalService = {
     assignedMembers: string[];
   }): Promise<Goal> {
     try {
-      // Since we're working with user_goals directly, we need to update all related records
-      const newGoalId = goalData.goal_name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-
-      // Delete existing assignments
-      const { error: deleteError } = await supabase
+      // Update all user_goals records with this goal_id
+      const { data: updatedGoals, error: updateError } = await supabase
         .from('user_goals')
-        .delete()
-        .eq('goal_id', goalId);
+        .update({
+          goal_name: goalData.goal_name,
+          description: goalData.description || '',
+          user_deadline: goalData.deadline,
+          priority: goalData.priority || 'Medium',
+          updated_at: new Date().toISOString()
+        })
+        .eq('goal_id', goalId)
+        .select()
+        .limit(1)
+        .single();
 
-      if (deleteError) {
-        throw deleteError;
+      if (updateError) {
+        throw updateError;
       }
-
-      // Create new assignments
-      if (goalData.assignedMembers.length > 0) {
-        const userGoals = goalData.assignedMembers.map(memberId => ({
-          goal_id: newGoalId,
+      
+      // Get current assignments to compare with new ones
+      const { data: currentAssignments } = await supabase
+        .from('user_goals')
+        .select('team_member_id, id')
+        .eq('goal_id', goalId);
+      
+      const currentMemberIds = currentAssignments?.map(a => a.team_member_id) || [];
+      const newMemberIds = goalData.assignedMembers;
+      
+      // Remove assignments that are no longer selected
+      const membersToRemove = currentMemberIds.filter(id => !newMemberIds.includes(id));
+      if (membersToRemove.length > 0) {
+        const { error: removeError } = await supabase
+          .from('user_goals')
+          .delete()
+          .eq('goal_id', goalId)
+          .in('team_member_id', membersToRemove);
+        
+        if (removeError) {
+          throw removeError;
+        }
+      }
+      
+      // Add new assignments
+      const membersToAdd = newMemberIds.filter(id => !currentMemberIds.includes(id));
+      if (membersToAdd.length > 0) {
+        const newAssignments = membersToAdd.map(memberId => ({
+          goal_id: goalId,
           team_member_id: memberId,
+          goal_name: goalData.goal_name,
+          description: goalData.description || '',
+          user_deadline: goalData.deadline,
+          priority: goalData.priority || 'Medium',
           assigned_date: new Date().toISOString().split('T')[0],
           status: 'assigned' as const,
           notes: ''
         }));
 
-        const { error: assignmentError } = await supabase
+        const { error: addError } = await supabase
           .from('user_goals')
-          .insert(userGoals);
+          .insert(newAssignments);
 
-        if (assignmentError) {
-          throw assignmentError;
+        if (addError) {
+          throw addError;
         }
       }
 
-      // Return updated goal object
+      // Return goal data in expected format
       return {
-        id: newGoalId,
+        id: goalId,
         goal_name: goalData.goal_name,
-        internal_name: newGoalId,
+        internal_name: goalData.goal_name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''),
         description: goalData.description,
         deadline: goalData.deadline,
         priority: goalData.priority || 'Medium',
         is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        created_at: updatedGoals.created_at,
+        updated_at: updatedGoals.updated_at
       };
     } catch (error) {
-      console.error('Error updating goal:', error);
+      console.error('Error updating goal in user_goals table:', error);
       throw error;
     }
   },
 
   async deleteGoal(goalId: string): Promise<void> {
     try {
-      // Delete user goal assignments (this is all we need since we're not using goals table)
-      const { error: assignmentError } = await supabase
+      // Delete all user_goals records with this goal_id
+      const { error } = await supabase
         .from('user_goals')
         .delete()
         .eq('goal_id', goalId);
 
-      if (assignmentError) {
-        throw assignmentError;
+      if (error) {
+        throw error;
       }
     } catch (error) {
-      console.error('Error deleting goal:', error);
+      console.error('Error deleting goal from user_goals table:', error);
       throw error;
     }
   },
@@ -301,24 +339,9 @@ export const goalService = {
         throw error;
       }
       
-      // Transform data to include goal information
-      const transformedData = (data || []).map(userGoal => ({
-        ...userGoal,
-        goals: {
-          id: userGoal.goal_id,
-          goal_name: userGoal.goal_id.split('_').map(word => 
-            word.charAt(0).toUpperCase() + word.slice(1)
-          ).join(' '),
-          internal_name: userGoal.goal_id,
-          description: '',
-          deadline: userGoal.assigned_date,
-          is_active: true
-        }
-      }));
-      
-      return transformedData;
+      return data || [];
     } catch (error) {
-      console.error('Error fetching user goals:', error);
+      console.error('Error fetching user goals from user_goals table:', error);
       throw error;
     }
   },
@@ -329,7 +352,8 @@ export const goalService = {
         .from('user_goals')
         .update({
           status,
-          notes: notes || ''
+          notes: notes || '',
+          updated_at: new Date().toISOString()
         })
         .eq('id', userGoalId)
         .select(`
@@ -347,24 +371,9 @@ export const goalService = {
         throw error;
       }
       
-      // Transform data to include goal information
-      const transformedData = {
-        ...data,
-        goals: {
-          id: data.goal_id,
-          goal_name: data.goal_id.split('_').map(word => 
-            word.charAt(0).toUpperCase() + word.slice(1)
-          ).join(' '),
-          internal_name: data.goal_id,
-          description: '',
-          deadline: data.assigned_date,
-          is_active: true
-        }
-      };
-      
-      return transformedData;
+      return data;
     } catch (error) {
-      console.error('Error updating user goal status:', error);
+      console.error('Error updating user goal status in user_goals table:', error);
       throw error;
     }
   },
@@ -390,38 +399,10 @@ export const goalService = {
         throw error;
       }
       
-      if (!data) return null;
-      
-      // Transform data to include goal information
-      const transformedData = {
-        ...data,
-        goals: {
-          id: data.goal_id,
-          goal_name: data.goal_id.split('_').map(word => 
-            word.charAt(0).toUpperCase() + word.slice(1)
-          ).join(' '),
-          internal_name: data.goal_id,
-          description: '',
-          deadline: data.assigned_date,
-          is_active: true
-        }
-      };
-      
-      return transformedData;
+      return data;
     } catch (error) {
-      console.error('Error fetching user goal:', error);
+      console.error('Error fetching user goal from user_goals table:', error);
       throw error;
-    }
-  },
-
-  // Helper method to get goal deadline from localStorage (temporary solution)
-  getGoalDeadlineFromStorage(goalId: string): string | null {
-    try {
-      const goals = JSON.parse(localStorage.getItem('goals') || '[]');
-      const goal = goals.find((g: any) => g.id === goalId);
-      return goal?.deadline || null;
-    } catch (error) {
-      return null;
     }
   }
 };
